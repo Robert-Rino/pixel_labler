@@ -41,7 +41,7 @@ class FFmpegCropTool:
         
         ttk.Button(control_frame, text="Open Video", command=self.open_file_dialog).pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(control_frame, text="Frame:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(control_frame, text="Frame/Time:").pack(side=tk.LEFT, padx=5)
         self.frame_entry = ttk.Entry(control_frame, width=10)
         self.frame_entry.insert(0, str(self.frame_num))
         self.frame_entry.pack(side=tk.LEFT, padx=5)
@@ -79,10 +79,53 @@ class FFmpegCropTool:
             self.load_video()
 
     def reload_frame(self):
+        input_str = self.frame_entry.get().strip()
+        
+        # Need FPS to convert time -> frame
+        # We ensure cap is available or open it temporarily
+        temp_cap = None
+        current_fps = 30.0
+        
+        if self.cap is not None and self.cap.isOpened():
+            current_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        elif self.video_path:
+            try:
+                temp_cap = cv2.VideoCapture(self.video_path)
+                if temp_cap.isOpened():
+                    current_fps = temp_cap.get(cv2.CAP_PROP_FPS)
+            finally:
+                if temp_cap: temp_cap.release()
+        
+        if current_fps <= 0: current_fps = 30.0
+
         try:
-            self.frame_num = int(self.frame_entry.get())
+            target_frame = self.frame_num
+            
+            if ":" in input_str:
+                # HH:MM:SS or MM:SS
+                parts = list(map(float, input_str.split(":")))
+                seconds = 0
+                if len(parts) == 3: # HH:MM:SS
+                    seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+                elif len(parts) == 2: # MM:SS
+                    seconds = parts[0] * 60 + parts[1]
+                else: 
+                     # Just assume seconds if weird format like "30" but with logic flow this hits number check usually
+                     pass
+                target_frame = int(seconds * current_fps) + 1
+                
+            elif input_str.lower().endswith("s"):
+                seconds = float(input_str[:-1])
+                target_frame = int(seconds * current_fps) + 1
+                
+            else:
+                target_frame = int(input_str)
+
+            self.frame_num = target_frame
+            
         except ValueError:
             pass # Keep old value
+            
         self.load_video()
 
     def load_video(self):

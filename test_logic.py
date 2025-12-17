@@ -50,5 +50,38 @@ class TestFFmpegCropTool(unittest.TestCase):
         expected_str = "crop=100:50:10:20\n"
         self.app.output_text.insert.assert_called_with(tk.END, expected_str)
 
+    def test_time_parsing(self):
+        # Mock Frame Entry
+        self.app.frame_entry = MagicMock()
+        
+        # Mock VideoCapture for FPS
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.return_value = 30.0 # 30 FPS
+        self.app.cap = mock_cap
+        
+        # Mock load_video to do nothing
+        self.app.load_video = MagicMock()
+
+        # Test Case 1: Seconds "2s" -> 2 * 30 + 1 = 61
+        self.app.frame_entry.get.return_value = "2s"
+        self.app.reload_frame()
+        self.assertEqual(self.app.frame_num, 61)
+
+        # Test Case 2: Time "00:01:00" -> 60 * 30 + 1 = 1801
+        self.app.frame_entry.get.return_value = "00:01:00"
+        self.app.reload_frame()
+        self.assertEqual(self.app.frame_num, 1801)
+        
+        # Test Case 3: MM:SS "1:30" -> 90 * 30 + 1 = 2701
+        self.app.frame_entry.get.return_value = "1:30"
+        self.app.reload_frame()
+        self.assertEqual(self.app.frame_num, 2701)
+
+        # Test Case 4: Normal Frame "100"
+        self.app.frame_entry.get.return_value = "100"
+        self.app.reload_frame()
+        self.assertEqual(self.app.frame_num, 100)
+
 if __name__ == '__main__':
     unittest.main()

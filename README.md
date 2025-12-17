@@ -41,7 +41,8 @@ uv run main.py --video_path "/path/to/your/video.mp4" --frame 120
 ### How to Use the UI
 
 1.  **Load Video**: If not loaded via command line, click "Open Video" to select a file.
-2.  **Navigate Frames**: Enter a frame number in the "Frame" box and click "Go" to jump to a specific frame.
+    - **Navigate Frames**: Enter a frame number OR a timestamp (e.g., `00:01:30`, `90s`, or `1234`) and click "Go".
+      - Supports `HH:MM:SS`, `MM:SS`, or seconds with `s` suffix.
 3.  **Draw Crops**:
     - Click and drag on the image to draw a rectangle.
     - You can draw multiple rectangles to get parameters for multiple crops (e.g., face cam, screen capture).
