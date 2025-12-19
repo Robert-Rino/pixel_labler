@@ -91,5 +91,10 @@ python crop.py /path/to/RootFolder --cam "569:416:7:663" --screen "829:904:566:1
 The script will:
 1. Parse `crop_info.md`.
 2. Create subfolders for each clip.
-3. Crop and stack the video using FFmpeg.
-4. Generate `metadata.md` in each subfolder.
+3. Automatically padding time (-5s start, +5s end).
+4. Generate 4 video files per clip:
+   - `stacked.mp4`: Vertical stack of Cam + Screen.
+   - `cam.mp4`: Camera crop.
+   - `screen.mp4`: Screen crop.
+   - `raw.mp4`: Raw cut from original video.
+5. Generate `metadata.md` in each subfolder.

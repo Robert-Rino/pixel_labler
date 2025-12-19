@@ -111,9 +111,6 @@ def process(root_dir, crop_cam, crop_screen):
             print(f"建立目錄: {output_folder}")
 
         # 4. 執行 ffmpeg 指令
-        output_path = os.path.join(output_folder, "out.mp4")
-        
-        # 如果輸入檔案存在才執行
         if os.path.exists(input_video_path):
             # Calculate padded time
             start_seconds = parse_time_to_seconds(start_ts)
@@ -129,15 +126,38 @@ def process(root_dir, crop_cam, crop_screen):
             adj_start_str = seconds_to_time_str(adj_start)
             adj_end_str = seconds_to_time_str(adj_end)
 
+            # Define output paths
+            path_stacked = os.path.join(output_folder, "stacked.mp4")
+            path_cam = os.path.join(output_folder, "cam.mp4")
+            path_screen = os.path.join(output_folder, "screen.mp4")
+            path_raw = os.path.join(output_folder, "raw.mp4")
+
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-ss", adj_start_str, "-to", adj_end_str, "-i", input_video_path,
                 "-filter_complex", 
-                f"[0:v]crop={crop_cam},scale=1080:960[cam]; "
-                f"[0:v]crop={crop_screen},scale=1080:960[screen]; "
-                f"[screen][cam]vstack=inputs=2[stacked]",
-                "-map", "[stacked]", "-map", "0:a",
+                f"[0:v]crop={crop_cam},scale=1080:960,split=2[cam_out][cam_stack]; "
+                f"[0:v]crop={crop_screen},scale=1080:960,split=2[screen_out][screen_stack]; "
+                f"[screen_stack][cam_stack]vstack=inputs=2[stacked_out]",
+                
+                # Output 1: Stacked
+                "-map", "[stacked_out]", "-map", "0:a",
                 "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-aspect", "9:16",
-                output_path
+                path_stacked,
+                
+                # Output 2: Cam
+                "-map", "[cam_out]", "-map", "0:a",
+                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+                path_cam,
+                
+                # Output 3: Screen
+                "-map", "[screen_out]", "-map", "0:a",
+                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+                path_screen,
+                
+                # Output 4: Raw
+                "-map", "0:v", "-map", "0:a",
+                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+                path_raw
             ]
             
             print(f"正在剪輯: {title_folder_name} ({start_ts} - {end_ts})...")
