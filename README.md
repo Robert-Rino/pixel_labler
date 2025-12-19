@@ -64,3 +64,32 @@ crop=out_w:out_h:x:y
 - `out_h`: Height of the cropped area.
 - `x`: X coordinate of the top-left corner.
 - `y`: Y coordinate of the top-left corner.
+
+## Batch Processing (crop.py)
+
+A script to process multiple clips based on a markdown file.
+
+### Structure
+Ensure your directory looks like this:
+```
+RootFolder/
+├── crop_info.md   (Contains the table of clips. Supports Markdown table or CSV format)
+├── original.mp4   (The source video)
+```
+
+### Usage
+```bash
+python crop.py /path/to/RootFolder
+```
+
+You can also specify custom crop parameters if they differ from the default:
+
+```bash
+python crop.py /path/to/RootFolder --cam "569:416:7:663" --screen "829:904:566:176"
+```
+
+The script will:
+1. Parse `crop_info.md`.
+2. Create subfolders for each clip.
+3. Crop and stack the video using FFmpeg.
+4. Generate `metadata.md` in each subfolder.
