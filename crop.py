@@ -131,6 +131,7 @@ def process(root_dir, crop_cam, crop_screen):
             path_cam = os.path.join(output_folder, "cam.mp4")
             path_screen = os.path.join(output_folder, "screen.mp4")
             path_raw = os.path.join(output_folder, "raw.mp4")
+            path_audio = os.path.join(output_folder, "audio.wav")
 
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-ss", adj_start_str, "-to", adj_end_str, "-i", input_video_path,
@@ -157,7 +158,12 @@ def process(root_dir, crop_cam, crop_screen):
                 # Output 4: Raw
                 "-map", "0:v", "-map", "0:a",
                 "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-                path_raw
+                path_raw,
+                
+                # Output 5: Audio
+                "-map", "0:a",
+                "-vn",
+                path_audio
             ]
             
             print(f"正在剪輯: {title_folder_name} ({start_ts} - {end_ts})...")
