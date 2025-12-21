@@ -97,4 +97,5 @@ The script will:
    - `cam.mp4`: Camera crop.
    - `screen.mp4`: Screen crop.
    - `raw.mp4`: Raw cut from original video.
+   - `audio.wav`: Extracted audio.
 5. Generate `metadata.md` in each subfolder.
