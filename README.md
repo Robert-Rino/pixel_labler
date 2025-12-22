@@ -98,4 +98,5 @@ The script will:
    - `screen.mp4`: Screen crop.
    - `raw.mp4`: Raw cut from original video.
    - `audio.wav`: Extracted audio.
-5. Generate `metadata.md` in each subfolder.
+5. **Auto-Transcribe**: Uses `transcript.py` to generate `zh.srt` from `raw.mp4`.
+6. Generate `metadata.md` in each subfolder.

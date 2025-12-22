@@ -3,7 +3,8 @@ import subprocess
 import re
 import argparse
 import sys
-
+import sys
+from transcript import transcribe_video
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
 # defaults
@@ -171,6 +172,16 @@ def process(root_dir, crop_cam, crop_screen):
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"FFmpeg 錯誤:\n{result.stderr}")
+            else:
+                # Transcribe raw.mp4
+                print("正在產生字幕 (zh.srt)...")
+                try:
+                    transcribe_video(
+                        input_file=path_raw,
+                        output_file=os.path.join(output_folder, "zh.srt")
+                    )
+                except Exception as e:
+                    print(f"字幕產生失敗: {e}")
         else:
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
