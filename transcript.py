@@ -91,32 +91,46 @@ def setup_argostranslate():
 def translate_with_argos(text):
     return argostranslate.translate.translate(text, "en", "zh")
 
-def main():
-    parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
-    parser.add_argument("input_file", help="Path to input video/audio file")
-    parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
-    parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
-    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--translate_to_zh", type=str_to_bool, default=True, help="Whether to translate English to Chinese")
-    parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
-    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
-
-    args = parser.parse_args()
-
-    input_path = os.path.abspath(args.input_file)
+def transcribe_video(
+    input_file: str,
+    output_file: str = "zh.srt",
+    model_size: str = "medium",
+    device: str = "auto",
+    compute_type: str = "int8",
+    translate_to_zh: bool = True,
+    translation_engine: str = "ollama",
+    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF"
+):
+    """
+    Core function to transcribe and optionally translate a video file.
+    
+    Args:
+        input_file: Path to the input video/audio file.
+        output_file: Path to save the SRT file (default: "zh.srt").
+        model_size: Whisper model size (default: "medium").
+        device: "cuda", "cpu", or "auto" (default: "auto").
+        compute_type: "int8" or "float16" (default: "int8").
+        translate_to_zh: Whether to translate English to Chinese (default: True).
+        translation_engine: "ollama" or "argostranslate" (default: "ollama").
+        ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
+    """
+    input_path = os.path.abspath(input_file)
     if not os.path.exists(input_path):
-        print(f"Error: File not found: {input_path}")
-        return
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+        
+    # Resolve output file path
+    # If output_file is just a filename (no directory), save it in the same folder as input_file
+    if not os.path.isabs(output_file) and os.path.dirname(output_file) == "":
+        output_file = os.path.join(os.path.dirname(input_path), output_file)
 
     # 1. Setup Device
-    device = args.device
     if device == "auto":
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    print(f"Loading Whisper Model: {args.model_size} on {device} ({args.compute_type})...")
+    print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
     
-    model = WhisperModel(args.model_size, device=device, compute_type=args.compute_type)
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     print("Starting Analysis & Transcription...")
     
@@ -132,19 +146,19 @@ def main():
     need_translate = False
     converter = None
     
-    if info.language == "en" and args.translate_to_zh:
+    if info.language == "en" and translate_to_zh:
         need_translate = True
         
-        if args.translation_engine == "ollama":
-            print(f"Language is English. Using Ollama ({args.ollama_model}) for translation...")
+        if translation_engine == "ollama":
+            print(f"Language is English. Using Ollama ({ollama_model}) for translation...")
             try:
                 requests.get("http://localhost:11434")
                 print("Ollama connection established.")
             except requests.exceptions.ConnectionError:
                 print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-                return
+                return # Should this raise?
                 
-        elif args.translation_engine == "argostranslate":
+        elif translation_engine == "argostranslate":
             print("Language is English. Using Argo Translate (en -> zh)...")
             try:
                 setup_argostranslate()
@@ -158,23 +172,19 @@ def main():
                 print(f"Translation setup failed: {e}")
                 need_translate = False
 
-    # Output file
-    base_name = os.path.splitext(input_path)[0]
-    output_srt = f"{base_name}.srt"
+    print(f"Writing subtitle to: {output_file}")
     
-    print(f"Writing subtitle to: {output_srt}")
-    
-    with open(output_srt, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         count = 1
         for segment in segments:
             start_time = format_timestamp(segment.start)
             end_time = format_timestamp(segment.end)
             text = segment.text.strip()
-            print(f'transscripted text {text}')
+            print(f'transcripted text: {text}')
             
             if need_translate:
-                if args.translation_engine == "ollama":
-                    translated = translate_with_ollama(text, model=args.ollama_model)
+                if translation_engine == "ollama":
+                    translated = translate_with_ollama(text, model=ollama_model)
                 else:
                     # argostranslate
                     translated = translate_with_argos(text)
@@ -193,6 +203,34 @@ def main():
             count += 1
             
     print("Done!")
+
+def main():
+    parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
+    parser.add_argument("input_file", help="Path to input video/audio file")
+    parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
+    parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
+    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
+    parser.add_argument("--translate_to_zh", type=str_to_bool, default=True, help="Whether to translate English to Chinese")
+    parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
+    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
+    parser.add_argument("--output", default="zh.srt", help="Output SRT filename (default: zh.srt)")
+
+    args = parser.parse_args()
+
+    try:
+        transcribe_video(
+            input_file=args.input_file,
+            output_file=args.output,
+            model_size=args.model_size,
+            device=args.device,
+            compute_type=args.compute_type,
+            translate_to_zh=args.translate_to_zh,
+            translation_engine=args.translation_engine,
+            ollama_model=args.ollama_model
+        )
+    except Exception as e:
+        print(f"Error during transcription: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

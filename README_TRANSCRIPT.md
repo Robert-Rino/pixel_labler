@@ -46,7 +46,9 @@ uv run transcript.py video.mp4 --model_size large-v3 --device cuda --translate_t
 - `--device`: `auto` (default), `cuda`, `cpu`.
 - `--translation_engine`: `ollama` (default) or `argostranslate`.
 - `--ollama_model`: Model to use for translation (default: `llama3`). Ensure you have pulled this model.
+- `--output`: Output filename (default: `zh.srt`).
 
 ### Output
-The tool generates a `.srt` file in the same directory as the video.
-Example: `video.mp4` -> `video.srt`
+The tool generates a `.srt` file. 
+- **Default**: Saves as `zh.srt` **in the same folder as the input video**.
+- **Custom**: Use `--output` to specify a filename (saved in video folder) or an absolute path.
