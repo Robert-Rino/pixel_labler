@@ -3,6 +3,7 @@ import sys
 import argparse
 import re
 import yt_dlp
+from transcript import transcribe_video
 
 def clean_filename(text):
     """Remove invalid characters for folder names"""
@@ -35,6 +36,7 @@ def download_video(url, root_dir="."):
     try:
         with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
             info = ydl.extract_info(url, download=False)
+            duration = info.get('duration', 0)
     except Exception as e:
         print(f"Error fetching metadata: {e}")
         sys.exit(1)
@@ -43,10 +45,8 @@ def download_video(url, root_dir="."):
     description = info.get('description', '')
     
     safe_title = clean_filename(title)
-    # Ensure title is not too long for filesystem
     safe_title = safe_title[:240] 
 
-    # Handle root_dir
     root_dir = os.path.abspath(root_dir)
     output_dir = os.path.join(root_dir, safe_title)
     
@@ -63,7 +63,6 @@ def download_video(url, root_dir="."):
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
-        # 'quiet': False,
     }
 
     print(f"Downloading video '{title}'...")
@@ -85,8 +84,26 @@ def download_video(url, root_dir="."):
         f.write(f"Description: {description}\n")
         f.write("```\n")
 
-    print("\nDone!")
     print(f"Output saved in: {output_dir}")
+
+    # 4. Auto-Transcribe if Short
+    is_short = "/shorts/" in url or (duration > 0 and duration < 180)
+    
+    if is_short:
+        print("\n[Auto-Transcribe] Video detected as Short/Short-form (< 180s or /shorts/).")
+        print("Starting transcription...")
+        try:
+            transcribe_video(
+                input_file=output_template,
+                output_file="zh.srt", # transcript.py logic will put this in same dir as input if simple filename
+                translate_to_zh=True
+            )
+        except Exception as e:
+            print(f"Transcription failed: {str(e)}")
+    else:
+        print(f"\nVideo duration is {duration}s. Skipping auto-transcription (only for < 180s).")
+
+    print("\nDone!")
 
 def main():
     parser = argparse.ArgumentParser(description="YouTube Downloader")
