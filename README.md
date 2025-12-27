@@ -73,7 +73,7 @@ A script to process multiple clips based on a markdown file.
 Ensure your directory looks like this:
 ```
 RootFolder/
-├── crop_info.md   (Contains the table of clips. Supports Markdown table or CSV format)
+├── crop_info.md (or crop_info.csv)   (Contains the table of clips. Supports Markdown table or CSV format)
 ├── original.mp4   (The source video)
 ```
 

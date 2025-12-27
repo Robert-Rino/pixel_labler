@@ -40,14 +40,22 @@ def process(root_dir, crop_cam, crop_screen):
         print(f"錯誤: 目錄不存在 - {root_dir}")
         return
 
-    # 1. 讀取 crop_info.md
+    # 1. 讀取 crop_info.md 或 crop_info.csv
     md_path = os.path.join(root_dir, "crop_info.md")
-    if not os.path.exists(md_path):
-        print(f"錯誤: 找不到 {md_path}")
+    csv_path = os.path.join(root_dir, "crop_info.csv")
+    
+    input_file_path = None
+    
+    if os.path.exists(md_path):
+        input_file_path = md_path
+    elif os.path.exists(csv_path):
+        input_file_path = csv_path
+    else:
+        print(f"錯誤: 找不到 crop_info.md 或 crop_info.csv 在 {root_dir}")
         return
 
-    print(f"正在讀取: {md_path}")
-    with open(md_path, "r", encoding="utf-8") as f:
+    print(f"正在讀取: {input_file_path}")
+    with open(input_file_path, "r", encoding="utf-8") as f:
         markdown_data = f.read()
 
     # 2. 確認輸入影片
