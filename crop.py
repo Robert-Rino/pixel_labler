@@ -104,6 +104,13 @@ def process(root_dir, crop_cam, crop_screen):
         print("錯誤: 找不到有效的內容 (表格或 CSV)")
         return
 
+    # Read root metadata if exists
+    root_metadata_path = os.path.join(root_dir, "metadata.md")
+    root_metadata_content = ""
+    if os.path.exists(root_metadata_path):
+        with open(root_metadata_path, "r", encoding="utf-8") as f:
+            root_metadata_content = f.read()
+
     for cols in parsed_rows:
         # 編號 | 開始時間 | 結束時間 | 片段摘要 | 賣點建議標題 | Hook建議副標題
         # cols[0] = 編號, cols[1] = Start, cols[2] = End, cols[3] = Summary, cols[4] = Title, cols[5] = Hook
@@ -179,7 +186,7 @@ def process(root_dir, crop_cam, crop_screen):
             # 使用 subprocess.run 執行並隱藏過多輸出，只顯示錯誤
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
             if result.returncode != 0:
-                print(f"FFmpeg 錯誤:\n{result.stderr}")
+                print(f"FFmpeg 錯誤:\\n{result.stderr}")
             else:
                 # Transcribe raw.mp4
                 print("正在產生字幕 (zh.srt)...")
@@ -194,9 +201,14 @@ def process(root_dir, crop_cam, crop_screen):
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
         # 5. 產生 metadata.md
-        metadata_content = f"# 標題\n{cols[4]}\n\n# 副標題\n{hook_text}"
+        clip_metadata = f"# 標題\n{cols[4]}\n\n# 副標題\n{hook_text}"
+        
+        final_metadata = clip_metadata
+        if root_metadata_content:
+            final_metadata = f"{root_metadata_content}\n==========\n\n{clip_metadata}"
+            
         with open(os.path.join(output_folder, "metadata.md"), "w", encoding="utf-8") as f:
-            f.write(metadata_content)
+            f.write(final_metadata)
 
 def main():
     parser = argparse.ArgumentParser(description="自動剪輯工具")
