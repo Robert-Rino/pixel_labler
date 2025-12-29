@@ -45,6 +45,9 @@ class FFmpegCropTool:
         self.frame_entry = ttk.Entry(control_frame, width=10)
         self.frame_entry.insert(0, str(self.frame_num))
         self.frame_entry.pack(side=tk.LEFT, padx=5)
+        # Bind Enter key
+        self.frame_entry.bind("<Return>", lambda event: self.reload_frame())
+
         ttk.Button(control_frame, text="Go", command=self.reload_frame).pack(side=tk.LEFT)
         
         ttk.Button(control_frame, text="Reset Crops", command=self.reset_crops).pack(side=tk.LEFT, padx=20)
@@ -69,6 +72,10 @@ class FFmpegCropTool:
         output_frame = ttk.LabelFrame(self.root, text="FFmpeg Crop Parameters", padding="10")
         output_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
+        # Ranges Button Frame
+        self.ranges_frame = ttk.Frame(output_frame)
+        self.ranges_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 5))
+
         self.output_text = tk.Text(output_frame, height=5)
         self.output_text.pack(fill=tk.X)
 
@@ -306,15 +313,37 @@ class FFmpegCropTool:
             # Label
             self.canvas.create_text(cx1, cy1 - 10, text=f"{w}x{h}", fill="red", anchor=tk.SW, tags="rect")
 
+    def copy_to_clipboard(self, text):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        print(f"Copied to clipboard: {text}")
+
     def update_output(self):
+        # Clear Text
         self.output_text.delete("1.0", tk.END)
-        for (x, y, w, h) in self.rectangles:
-            line = f"crop={w}:{h}:{x}:{y}\n"
+        # Clear buttons
+        for widget in self.ranges_frame.winfo_children():
+            widget.destroy()
+
+        for i, (x, y, w, h) in enumerate(self.rectangles):
+            crop_str = f"{w}:{h}:{x}:{y}"
+            line = f"crop={crop_str}\n"
             self.output_text.insert(tk.END, line)
+            
+            # Add Button
+            btn_text = f"Range {i+1}: {crop_str}"
+            btn = ttk.Button(
+                self.ranges_frame, 
+                text=btn_text, 
+                command=lambda s=crop_str: self.copy_to_clipboard(s)
+            )
+            btn.pack(side=tk.LEFT, padx=5)
 
     def reset_crops(self):
         self.rectangles = []
         self.output_text.delete("1.0", tk.END)
+        for widget in self.ranges_frame.winfo_children():
+            widget.destroy()
         self.redraw_rectangles()
 
 def main():
