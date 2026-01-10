@@ -20,7 +20,7 @@ def validate_youtube_url(url):
     )
     return re.match(youtube_regex, url) is not None
 
-def download_video(url, root_dir="."):
+def download_video(url, root_dir=".", force_transcript=False):
     if not validate_youtube_url(url):
         print(f"Error: Invalid YouTube URL: {url}")
         sys.exit(1)
@@ -89,8 +89,10 @@ def download_video(url, root_dir="."):
     # 4. Auto-Transcribe if Short
     is_short = "/shorts/" in url or (duration > 0 and duration < 180)
     
-    if is_short:
-        print("\n[Auto-Transcribe] Video detected as Short/Short-form (< 180s or /shorts/).")
+    
+    if is_short or force_transcript:
+        reason = "Short video" if is_short else "Forced via flag"
+        print(f"\n[Auto-Transcribe] Triggered ({reason}).")
         print("Starting transcription...")
         try:
             transcribe_video(
@@ -109,9 +111,10 @@ def main():
     parser = argparse.ArgumentParser(description="YouTube Downloader")
     parser.add_argument("url", help="YouTube Video URL")
     parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
+    parser.add_argument("--transcript", action="store_true", default=False, help="Force generate transcript")
     args = parser.parse_args()
 
-    download_video(args.url, root_dir=args.root_dir)
+    download_video(args.url, root_dir=args.root_dir, force_transcript=args.transcript)
 
 if __name__ == "__main__":
     main()
