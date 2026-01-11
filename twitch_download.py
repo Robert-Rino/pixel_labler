@@ -55,7 +55,8 @@ def download_video(url, root_dir=".", audio_only=False):
         print("Failed to retrieve video info.")
         sys.exit(1)
 
-    title = info.get("title", f"Twitch_VOD_{info.get('id', 'unknown')}")
+    # Use custom title, streamer uses same title for their VODs
+    title = info.get(f"Twitch_VOD_{info.get('channel')}_{info.get('datetime')}")
     description = info.get("description") # Can be None
     if description is None:
          description = "No description available."
@@ -133,19 +134,14 @@ def download_video(url, root_dir=".", audio_only=False):
 
     print(f"Output saved in: {output_dir}")
 
-    # 4. Auto-Transcribe if Short
-    if duration > 0 and duration < 180:
-        print("\n[Auto-Transcribe] Video duration < 180s.")
-        print("Starting transcription...")
-        try:
-            transcribe_video(
-                input_file=output_template,
-                zh_output="zh.srt"
-            )
-        except Exception as e:
-            print(f"Transcription failed: {str(e)}")
-    else:
-        print(f"\nSkipping auto-transcription (only for < 180s).")
+    # 4. Auto-Transcribe, always do for twitter
+    print("Starting transcription...")
+    try:
+        transcribe_video(
+            input_file=output_template,
+        )
+    except Exception as e:
+        print(f"Transcription failed: {str(e)}")
 
     print("\nDone!")
 
