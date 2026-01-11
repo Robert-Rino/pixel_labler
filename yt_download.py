@@ -3,6 +3,7 @@ import sys
 import argparse
 import re
 import yt_dlp
+import subprocess
 from transcript import transcribe_video
 
 def clean_filename(text):
@@ -20,7 +21,7 @@ def validate_youtube_url(url):
     )
     return re.match(youtube_regex, url) is not None
 
-def download_video(url, root_dir=".", force_transcript=False):
+def download_video(url, root_dir=".", force_transcript=False, extract_audio=True):
     if not validate_youtube_url(url):
         print(f"Error: Invalid YouTube URL: {url}")
         sys.exit(1)
@@ -86,6 +87,28 @@ def download_video(url, root_dir=".", force_transcript=False):
 
     print(f"Output saved in: {output_dir}")
 
+    # 2.5 Extract Audio (if requested or forced by transcript)
+    if force_transcript:
+        extract_audio = True
+
+    if extract_audio:
+        print(f"Extracting audio to audio.mp4...")
+        audio_path = os.path.join(output_dir, "audio.mp4")
+        # ffmpeg -i input.mp4 -vn -c:a copy output.mp4
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", output_template,
+            "-vn",
+            "-c:a", "copy",
+            audio_path
+        ]
+        try:
+             # Run quietly
+             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+             print(f"Audio extracted: {audio_path}")
+        except subprocess.CalledProcessError as e:
+             print(f"Audio extraction failed: {e}")
+
     # 4. Auto-Transcribe if Short
     is_short = "/shorts/" in url or (duration > 0 and duration < 180)
     
@@ -97,8 +120,7 @@ def download_video(url, root_dir=".", force_transcript=False):
         try:
             transcribe_video(
                 input_file=output_template,
-                output_file="zh.srt", # transcript.py logic will put this in same dir as input if simple filename
-                translate_to_zh=True
+                zh_output="zh.srt"
             )
         except Exception as e:
             print(f"Transcription failed: {str(e)}")
@@ -112,9 +134,10 @@ def main():
     parser.add_argument("url", help="YouTube Video URL")
     parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
     parser.add_argument("--transcript", action="store_true", default=False, help="Force generate transcript")
+    parser.add_argument("--audio", action=argparse.BooleanOptionalAction, default=True, help="Extract audio stream (default: True)")
     args = parser.parse_args()
 
-    download_video(args.url, root_dir=args.root_dir, force_transcript=args.transcript)
+    download_video(args.url, root_dir=args.root_dir, force_transcript=args.transcript, extract_audio=args.audio)
 
 if __name__ == "__main__":
     main()

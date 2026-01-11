@@ -21,7 +21,7 @@ This project uses `uv` for dependency management.
 
 ## 1. YouTube Downloader (`yt_download.py`)
 
-Download videos from YouTube, automatically organizing them into folders with metadata.
+Download videos from YouTube.
 
 ### Usage
 ```bash
@@ -29,53 +29,66 @@ uv run yt_download.py "YOUTUBE_URL"
 ```
 
 ### Features
-- **Auto-Folder**: Creates a folder named after the video title.
-- **Metadata**: Generates `metadata.md` with Source, Title, and Description.
-- **Auto-Transcribe Shorts**: If the video is a Short (< 180s), it automatically generates Chinese subtitles (`zh.srt`).
-- **Options**:
-  - `--root_dir`: Specify base directory for downloads (default: current dir).
+- **Auto-Folder**: Creates a folder named after the video title (`safe_title/`).
+- **Metadata**: Generates `metadata.md`.
+- **Audio Extraction**: Automatically extracts audio to `audio.mp4` by default.
+- **Auto-Transcribe**:
+  - Automatically transcribes Shorts (< 180s) to `transcript.srt` (original) and `zh.srt` (Chinese).
+  - Use `--transcript` to force transcription for longer videos.
+
+### Options
+- `--root_dir`: Specify base directory for downloads.
+- `--transcript`: Force generate transcript (and force audio extraction).
+- `--audio` / `--no-audio`: Enable/Disable audio stream extraction (Default: Enabled).
 
 ---
 
-## 2. Transcription Tool (`transcript.py`)
+## 2. Twitch Downloader (`twitch_download.py`)
 
-Generate SRT subtitles using separate transcription (faster-whisper) and translation (Ollama/ArgosTranslate) engines.
+Download VODs from Twitch using `twitch-dl`.
 
 ### Usage
 ```bash
-uv run transcript.py /path/to/video.mp4
+uv run twitch_download.py "TWITCH_VOD_URL"
 ```
 
+### Features
+- **High Quality**: Downloads `source` quality by default.
+- **Audio Only**: Can optionally download an audio-only track.
+- **Metadata**: Extracts JSON metadata to `metadata.md`.
+- **Auto-Transcribe**: Automatically transcribes videos < 180s.
+
 ### Options
-- `--model_size`: Whisper model size (default: `large-v3`).
-- `--device`: `cuda` or `cpu` (default: auto).
-- `--compute_type`: Quantization type (default: `float16`).
-- `--translation_engine`: `ollama` (default) or `argostranslate`.
-- `--ollama_model`: Model for Ollama translation (default: `llama3`).
-- `--output`: Output filename (default: `zh.srt` in the same folder as input).
-- `--no-translate`: Skip translation (output English only).
+- `--root_dir`: Base directory.
+- `--audio`: Also download the audio-only track as `audio.mp4`.
 
 ---
 
-## 3. Batch Clipper (`crop.py`)
+## 3. Transcription Tool (`transcript.py`)
 
-Process a long video into multiple clips based on a list defined in a Markdown or CSV file.
+Generate SRT subtitles using `faster-whisper`.
 
-### Structure
-Ensure your directory looks like this:
-```
-RootFolder/
-├── crop_info.csv (or crop_info.md)  # Clip definitions
-├── original.mp4                     # Source video
-└── metadata.md (Optional)           # Root metadata to prepend to clips
+### Usage
+```bash
+uv run transcript.py /path/to/video.mp4 --zh_output "zh.srt"
 ```
 
-### Input Format (`crop_info.csv`)
-Columns: `No, Start, End, Summary, Title, Hook`
-Example:
-```csv
-1, 00:00:10, 00:00:20, Funny moment, My Clip Title, Wait for it!
-```
+### Features
+- **Original Transcript**: ALWAYS generates `transcript.srt` (original language) in the file's directory.
+- **Translation**: Optionally translates to Traditional Chinese (Taiwan style) if `--zh_output` is provided.
+
+### Options
+- `--zh_output`: Path to save the translated Chinese SRT file (e.g., `zh.srt`). If omitted, only `transcript.srt` is created.
+- `--model_size`: Whisper model size (default: `medium`).
+- `--device`: `cuda` or `cpu` (default: auto).
+- `--translation_engine`: `ollama` (default) or `argostranslate`.
+- `--ollama_model`: Ollama model tag (default: `hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF`).
+
+---
+
+## 4. Batch Clipper (`crop.py`)
+
+Process a long video into multiple clips based on a list.
 
 ### Usage
 ```bash
@@ -83,15 +96,19 @@ uv run crop.py /path/to/RootFolder
 ```
 
 ### Features
-- **Multiple Outputs**: Generates `stacked.mp4` (Vertical), `cam.mp4`, `screen.mp4`, `raw.mp4`, and `audio.wav`.
-- **Auto-Transcribe**: Automatically generates `zh.srt` for `raw.mp4`.
-- **Metadata Inheritance**: Prepends content from root `metadata.md` to each clip's metadata.
-- **Time Padding**: Automatically adds buffer (-5s start, +5s end).
-- **Custom Crops**: Use `--cam "w:h:x:y"` and `--screen "w:h:x:y"` to override defaults.
+- **Multiple Outputs**: Vertical stacked, cam-only, screen-only, raw clip, and audio.
+- **Auto-Transcribe**: Automatically generates `transcript.srt` and translated `zh.srt` for `raw.mp4`.
+- **Metadata**: Inherits root metadata.
+
+### Input Format (`crop_info.csv`)
+Columns: `No, Start, End, Summary, Title, Hook`
+```csv
+1, 00:00:10, 00:00:20, Summary, Clip Title, Hook text
+```
 
 ---
 
-## 4. Interactive Crop UI (`main.py`)
+## 5. Interactive Crop UI (`main.py`)
 
 A graphical tool to visually determine FFmpeg crop parameters.
 
@@ -99,13 +116,3 @@ A graphical tool to visually determine FFmpeg crop parameters.
 ```bash
 uv run main.py
 ```
-Or with arguments:
-```bash
-uv run main.py --video_path video.mp4 --frame 120
-```
-
-### Workflow
-1. **Load Video**: Open a video file.
-2. **Navigate**: Jump to specific timestamps or frames.
-3. **Draw**: Drag to draw rectangles around areas of interest (e.g., Face Cam, Game Screen).
-4. **Get Command**: The tool generates the `crop=w:h:x:y` string for you.

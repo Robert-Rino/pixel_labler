@@ -140,8 +140,7 @@ def download_video(url, root_dir=".", audio_only=False):
         try:
             transcribe_video(
                 input_file=output_template,
-                output_file="zh.srt",
-                translate_to_zh=True
+                zh_output="zh.srt"
             )
         except Exception as e:
             print(f"Transcription failed: {str(e)}")

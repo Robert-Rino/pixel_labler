@@ -93,11 +93,10 @@ def translate_with_argos(text):
 
 def transcribe_video(
     input_file: str,
-    output_file: str = "zh.srt",
+    zh_output: str = None,
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    translate_to_zh: bool = True,
     translation_engine: str = "ollama",
     ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF"
 ):
@@ -106,11 +105,10 @@ def transcribe_video(
     
     Args:
         input_file: Path to the input video/audio file.
-        output_file: Path to save the SRT file (default: "zh.srt").
+        zh_output: Path to save the translated Chinese SRT file (optional).
         model_size: Whisper model size (default: "medium").
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
-        translate_to_zh: Whether to translate English to Chinese (default: True).
         translation_engine: "ollama" or "argostranslate" (default: "ollama").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
     """
@@ -118,10 +116,14 @@ def transcribe_video(
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Input file not found: {input_path}")
         
-    # Resolve output file path
-    # If output_file is just a filename (no directory), save it in the same folder as input_file
-    if not os.path.isabs(output_file) and os.path.dirname(output_file) == "":
-        output_file = os.path.join(os.path.dirname(input_path), output_file)
+    # Resolve output file paths
+    # Original transcript always goes to transcript.srt in the same directory as input
+    original_output = os.path.join(os.path.dirname(input_path), "transcript.srt")
+
+    # Resolve zh_output if provided
+    if zh_output:
+        if not os.path.isabs(zh_output) and os.path.dirname(zh_output) == "":
+            zh_output = os.path.join(os.path.dirname(input_path), zh_output)
 
     # 1. Setup Device
     if device == "auto":
@@ -137,7 +139,6 @@ def transcribe_video(
     segments, info = model.transcribe(
         input_path, 
         vad_filter=True,
-        initial_prompt="以下是繁體中文的字幕。"
     )
 
     print(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
@@ -146,20 +147,27 @@ def transcribe_video(
     need_translate = False
     converter = None
     
-    if info.language == "en" and translate_to_zh:
-        need_translate = True
-        
+    if zh_output:
+        # Check if we should translate (e.g. if original is not Chinese? Or always if requested?)
+        # User request: "if zh_output present, translate..." impliying always attempt translation
+        # But logically only if not already Chinese?
+        # User said: "translate the whisper output into Traditional Chinese"
+        # I will assume always translate unless it IS Chinese, but the prompt implies translate FROM whatever.
+        # However, checking if info.language == "zh" might save effort?
+        # But maybe user wants to enforce TC style even if source is SC?
+        pass # We will proceed to translate if zh_output is set.
+
         if translation_engine == "ollama":
-            print(f"Language is English. Using Ollama ({ollama_model}) for translation...")
+            print(f"Translation enabled (Ollama: {ollama_model})...")
             try:
                 requests.get("http://localhost:11434")
                 print("Ollama connection established.")
             except requests.exceptions.ConnectionError:
                 print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-                return # Should this raise?
+                zh_output = None # Disable translation
                 
         elif translation_engine == "argostranslate":
-            print("Language is English. Using Argo Translate (en -> zh)...")
+            print("Translation enabled (Argo Translate en -> zh)...")
             try:
                 setup_argostranslate()
                 # Check for Traditional Chinese converter
@@ -170,38 +178,62 @@ def transcribe_video(
                     print("Warning: 'opencc-python-reimplemented' not found. Translation might be in Simplified Chinese.")
             except Exception as e:
                 print(f"Translation setup failed: {e}")
-                need_translate = False
-
-    print(f"Writing subtitle to: {output_file}")
+                zh_output = None
     
-    with open(output_file, "w", encoding="utf-8") as f:
+    print(f"Writing original transcript to: {original_output}")
+    if zh_output:
+        print(f"Writing translated transcript to: {zh_output}")
+    
+    # Open files
+    f_orig = open(original_output, "w", encoding="utf-8")
+    f_zh = open(zh_output, "w", encoding="utf-8") if zh_output else None
+    
+    try:
         count = 1
         for segment in segments:
             start_time = format_timestamp(segment.start)
             end_time = format_timestamp(segment.end)
             text = segment.text.strip()
-            print(f'transcripted text: {text}')
             
-            if need_translate:
+            # Write Original
+            print(f"[{start_time} --> {end_time}] {text}")
+            f_orig.write(f"{count}\n")
+            f_orig.write(f"{start_time} --> {end_time}\n")
+            f_orig.write(f"{text}\n\n")
+            f_orig.flush()
+
+            # Translate if needed
+            if f_zh:
+                translated = text
+                # Logic: Translate if needed. 
+                # If source is EN, we can use argos/ollama.
+                # If source is other, argos only supports en->zh usually? 
+                # Ollama can try anything.
+                # Assuming source is English-ish or Ollama can handle it.
+                
                 if translation_engine == "ollama":
                     translated = translate_with_ollama(text, model=ollama_model)
-                else:
-                    # argostranslate
+                elif info.language == "en": # Argos only supports EN->ZH usually setup above
                     translated = translate_with_argos(text)
                     if converter:
                         translated = converter.convert(translated)
                 
                 if not translated:
                    translated = text 
-                text = translated
+                
+                print(f"[{start_time} --> {end_time}] {translated}")
+                f_zh.write(f"{count}\n")
+                f_zh.write(f"{start_time} --> {end_time}\n")
+                f_zh.write(f"{translated}\n\n")
+                f_zh.flush()
 
-            print(f"[{start_time} --> {end_time}] {text}")
-            
-            f.write(f"{count}\n")
-            f.write(f"{start_time} --> {end_time}\n")
-            f.write(f"{text}\n\n")
             count += 1
             
+    finally:
+        f_orig.close()
+        if f_zh:
+            f_zh.close()
+
     print("Done!")
 
 def main():
@@ -210,21 +242,24 @@ def main():
     parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
     parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
     parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--translate_to_zh", type=str_to_bool, default=True, help="Whether to translate English to Chinese")
+    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
+    # translate_to_zh removed
     parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
     parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
-    parser.add_argument("--output", default="zh.srt", help="Output SRT filename (default: zh.srt)")
+    parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
+    parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
+    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
+    # parser.add_argument("--output"...) Removed in favor of auto transcript.srt + optional zh_output
 
     args = parser.parse_args()
 
     try:
         transcribe_video(
             input_file=args.input_file,
-            output_file=args.output,
+            zh_output=args.zh_output,
             model_size=args.model_size,
             device=args.device,
             compute_type=args.compute_type,
-            translate_to_zh=args.translate_to_zh,
             translation_engine=args.translation_engine,
             ollama_model=args.ollama_model
         )
