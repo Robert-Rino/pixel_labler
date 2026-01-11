@@ -91,6 +91,102 @@ def setup_argostranslate():
 def translate_with_argos(text):
     return argostranslate.translate.translate(text, "en", "zh")
 
+
+def split_srt_by_hour(input_srt):
+    """
+    Split a large SRT file into multiple files based on hour.
+    transcript.srt -> transcript-0.srt (0h-1h), transcript-1.srt (1h-2h), etc.
+    """
+    if not os.path.exists(input_srt):
+        return
+
+    print(f"Splitting SRT by hour: {input_srt}")
+    
+    base_name = os.path.splitext(input_srt)[0] # e.g. /path/to/transcript
+    # We want transcript-0.srt
+    
+    current_hour = -1
+    current_file = None
+    
+    count = 1
+    
+    with open(input_srt, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+        
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line: # Skip empty lines/separators
+            i += 1
+            continue
+            
+        # SRT block structure:
+        # Index
+        # Timestamp --> Timestamp
+        # Text
+        # (Blank line)
+        
+        # Check if line looks like index
+        if line.isdigit():
+            index = line
+            if i + 1 >= len(lines): break
+            timestamp_line = lines[i+1].strip()
+            
+            if '-->' in timestamp_line:
+                start_str, end_str = timestamp_line.split(' --> ')
+                start_str = start_str.strip()
+                
+                # Determine hour
+                # simple parsing HH:MM:SS,mmm
+                try:
+                    h_str = start_str.split(':')[0]
+                    hour = int(h_str)
+                except:
+                    hour = 0
+                
+                if hour != current_hour:
+                    if current_file:
+                        current_file.close()
+                    
+                    current_hour = hour
+                    output_filename = f"{base_name}-{current_hour}.srt"
+                    print(f"Creating hourly split: {output_filename}")
+                    current_file = open(output_filename, 'w', encoding='utf-8')
+                    # Reset counter for new file? Usually valid SRTs start at 1.
+                    # But if we split, maybe keeping global index is ok, or reset?
+                    # User request: "generate multiple... from transcript.srt".
+                    # Usually better to keep sequential index OR reset if it's a standalone view.
+                    # I will KEEP original index for now as it maps to original video time.
+                    # Wait, usually split SRTs are used for corresponding split video chunks.
+                    # But here we are splitting ONLY the SRT. The video is likely still full length?
+                    # "transcript-{i}.srt... for each i stands for number i's hour content".
+                    # Timestamp should probably be preserved (absolute time), so index implies order.
+                
+                # Write the block to current file
+                if current_file:
+                    # Find end of block (empty line)
+                    current_file.write(f"{line}\n") # Index
+                    current_file.write(f"{timestamp_line}\n") # Time
+                    
+                    # Read text lines until empty line
+                    j = i + 2
+                    while j < len(lines):
+                        txt_line = lines[j].rstrip() # Keep structure but parse empty line check
+                        if not txt_line:
+                            current_file.write("\n")
+                            break
+                        current_file.write(f"{txt_line}\n")
+                        j += 1
+                    
+                    # Advance i
+                    i = j + 1
+                    continue
+        
+        i += 1
+
+    if current_file:
+        current_file.close()
+
 def transcribe_video(
     input_file: str,
     zh_output: str = None,
@@ -235,6 +331,10 @@ def transcribe_video(
             f_zh.close()
 
     print("Done!")
+    
+    # Split original transcript by hour
+    if os.path.exists(original_output):
+         split_srt_by_hour(original_output)
 
 def main():
     parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
@@ -242,14 +342,9 @@ def main():
     parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
     parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
     parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    # translate_to_zh removed
     parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
     parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
-    parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
-    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
-    # parser.add_argument("--output"...) Removed in favor of auto transcript.srt + optional zh_output
 
     args = parser.parse_args()
 
@@ -268,4 +363,8 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    # main()
+    parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
+    parser.add_argument("input_file", help="Path to input video/audio file")
+    args = parser.parse_args()
+    split_srt_by_hour(args.input_file)
