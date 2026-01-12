@@ -95,7 +95,7 @@ def process(root_dir, crop_cam, crop_screen):
         # Skip header if looks like header
         reader = csv.reader(io.StringIO(markdown_data))
         for i, row in enumerate(reader):
-            if i == 0 and "編號" in row[0]: continue # Skip header
+            if i == 0 and "Shorts Number" in row[0]: continue # Skip header
             if not row: continue
             if len(row) >= 6:
                 # Clean whitespace
