@@ -11,7 +11,9 @@ INPUT_FILE_NAME = "original.mp4"
 DEFAULT_CROP_CAM = "640:720:1280:0"
 DEFAULT_CROP_SCREEN = "1280:720:0:0"
 # ===========================================
-
+# ===========================================
+WATERMARK_TEXT = "@StreamFlash"
+WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=36:x=(w-tw)/2:y=(h-th)/2"
 def clean_filename(text):
     """移除資料夾名稱中不合法的字元以及 Hashtags"""
     # Remove #hashtags
@@ -151,10 +153,22 @@ def process(root_dir, crop_cam, crop_screen):
 
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-ss", adj_start_str, "-to", adj_end_str, "-i", input_video_path,
+                '-map_metadata', '0',
+                '-avoid_negative_ts', 'make_zero',
+                '-movflags', '+faststart',
                 "-filter_complex", 
-                f"[0:v]crop={crop_cam},scale=1080:960,split=2[cam_out][cam_stack]; "
-                f"[0:v]crop={crop_screen},scale=1080:960,split=2[screen_out][screen_stack]; "
-                f"[screen_stack][cam_stack]vstack=inputs=2[stacked_out]",
+                # 1. Crop & Scale & Split
+                f"[0:v]crop={crop_cam},scale=1080:960,split=2[cam_base][cam_stack]; "
+                f"[0:v]crop={crop_screen},scale=1080:960,split=2[screen_base][screen_stack]; "
+                
+                # 2. Stack
+                f"[screen_stack][cam_stack]vstack=inputs=2[stacked_base]; "
+                
+                # 3. Apply Watermark
+                f"[stacked_base]{WATERMARK_FILTER}[stacked_out]; "
+                f"[cam_base]{WATERMARK_FILTER}[cam_out]; "
+                f"[screen_base]{WATERMARK_FILTER}[screen_out]; "
+                f"[0:v]{WATERMARK_FILTER}[raw_out]",
                 
                 # Output 1: Stacked
                 "-map", "[stacked_out]", "-map", "0:a",
@@ -172,7 +186,7 @@ def process(root_dir, crop_cam, crop_screen):
                 path_screen,
                 
                 # Output 4: Raw
-                "-map", "0:v", "-map", "0:a",
+                "-map", "[raw_out]", "-map", "0:a",
                 "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
                 path_raw,
                 
