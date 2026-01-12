@@ -207,7 +207,8 @@ def process(root_dir, crop_cam, crop_screen):
                 try:
                     transcribe_video(
                         input_file=path_raw,
-                        zh_output=os.path.join(output_folder, "zh.srt")
+                        zh_output=os.path.join(output_folder, "zh.srt"),    
+                        split_by_hour=False,
                     )
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")
