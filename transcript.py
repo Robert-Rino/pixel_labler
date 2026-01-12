@@ -6,8 +6,6 @@ import requests
 import json
 from datetime import timedelta
 from faster_whisper import WhisperModel
-import argostranslate.package
-import argostranslate.translate
 
 def str_to_bool(value):
     if isinstance(value, bool):
@@ -68,29 +66,6 @@ def translate_with_ollama(text, model="llama3"):
         print(f"Ollama Translation Error: {e}")
         return text # Return original text on error
 
-def setup_argostranslate():
-    """Check and install en -> zh translation package if needed"""
-    print("Checking translation packages...")
-    argostranslate.package.update_package_index()
-    available_packages = argostranslate.package.get_available_packages()
-    
-    package_to_install = next(
-        filter(
-            lambda x: x.from_code == "en" and x.to_code == "zh", available_packages
-        ), None
-    )
-    
-    if package_to_install:
-        if package_to_install not in argostranslate.package.get_installed_packages():
-             print(f"Downloading {package_to_install}...")
-             argostranslate.package.install_from_path(package_to_install.download())
-             print("Translation package installed.")
-    else:
-        print("Required translation package (en->zh) not found in index.")
-
-def translate_with_argos(text):
-    return argostranslate.translate.translate(text, "en", "zh")
-
 
 def split_srt_by_hour(input_srt):
     """
@@ -102,7 +77,7 @@ def split_srt_by_hour(input_srt):
 
     print(f"Splitting SRT by hour: {input_srt}")
     
-    base_name = os.path.dirname(input_srt)[0] # e.g. /path/to/transcript
+    base_name = os.path.dirname(input_srt) # e.g. /path/to/transcript
     # We want transcript-0.srt
     
     current_hour = -1
@@ -203,7 +178,6 @@ def transcribe_video(
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    translation_engine: str = "ollama",
     ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
     split_by_hour: bool = True
 ):
@@ -216,8 +190,6 @@ def transcribe_video(
         model_size: Whisper model size (default: "medium").
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
-        translation_engine: "ollama" or "argostranslate" (default: "ollama").
-        translation_engine: "ollama" or "argostranslate" (default: "ollama").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
         split_by_hour: Whether to split the transcript into hourly chunks (default: True).
     """
@@ -241,6 +213,7 @@ def transcribe_video(
     
     print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
     
+    
     model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
     print("Starting Analysis & Transcription...")
@@ -250,7 +223,12 @@ def transcribe_video(
         vad_filter=True,
     )
 
-    print(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
+    # info is returned immediately by faster-whisper
+    info_language = info.language
+    print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
+    
+    # Common Info variables for translation logic
+    # (info object was faster-whisper specific, replaced with local vars)
 
     # Prepare Translation if needed
     need_translate = False
@@ -266,28 +244,13 @@ def transcribe_video(
         # But maybe user wants to enforce TC style even if source is SC?
         pass # We will proceed to translate if zh_output is set.
 
-        if translation_engine == "ollama":
-            print(f"Translation enabled (Ollama: {ollama_model})...")
-            try:
-                requests.get("http://localhost:11434")
-                print("Ollama connection established.")
-            except requests.exceptions.ConnectionError:
-                print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-                zh_output = None # Disable translation
-                
-        elif translation_engine == "argostranslate":
-            print("Translation enabled (Argo Translate en -> zh)...")
-            try:
-                setup_argostranslate()
-                # Check for Traditional Chinese converter
-                try:
-                    import opencc
-                    converter = opencc.OpenCC('s2t')
-                except ImportError:
-                    print("Warning: 'opencc-python-reimplemented' not found. Translation might be in Simplified Chinese.")
-            except Exception as e:
-                print(f"Translation setup failed: {e}")
-                zh_output = None
+        print(f"Translation enabled (Ollama: {ollama_model})...")
+        try:
+            requests.get("http://localhost:11434")
+            print("Ollama connection established.")
+        except requests.exceptions.ConnectionError:
+            print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
+            zh_output = None # Disable translation
     
     print(f"Writing original transcript to: {original_output}")
     if zh_output:
@@ -320,12 +283,7 @@ def transcribe_video(
                 # Ollama can try anything.
                 # Assuming source is English-ish or Ollama can handle it.
                 
-                if translation_engine == "ollama":
-                    translated = translate_with_ollama(text, model=ollama_model)
-                elif info.language == "en": # Argos only supports EN->ZH usually setup above
-                    translated = translate_with_argos(text)
-                    if converter:
-                        translated = converter.convert(translated)
+                translated = translate_with_ollama(text, model=ollama_model)
                 
                 if not translated:
                    translated = text 
@@ -346,7 +304,6 @@ def transcribe_video(
     print("Done!")
     
     # Split original transcript by hour
-    # Split original transcript by hour
     if split_by_hour and os.path.exists(original_output):
          split_srt_by_hour(original_output)
 
@@ -356,7 +313,6 @@ def main():
     parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
     parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
     parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
     parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--no-split-by-hour", action="store_true", help="Disable splitting transcript by hour")
