@@ -112,6 +112,9 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
     # 4. Auto-Transcribe if Short
     is_short = "/shorts/" in url or (duration > 0 and duration < 180)
     
+    split_by_hour = True
+    if is_short:
+        split_by_hour = False
     
     if is_short or force_transcript:
         reason = "Short video" if is_short else "Forced via flag"
@@ -120,7 +123,9 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
         try:
             transcribe_video(
                 input_file=output_template,
-                zh_output="zh.srt"
+                zh_output="zh.srt",
+                split_by_hour=split_by_hour,
+                
             )
         except Exception as e:
             print(f"Transcription failed: {str(e)}")
