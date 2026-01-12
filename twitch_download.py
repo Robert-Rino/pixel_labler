@@ -6,6 +6,7 @@ import subprocess
 import shutil
 import json
 from transcript import transcribe_video
+import n8n
 
 def clean_filename(text):
     """Remove invalid characters for folder names"""
@@ -38,7 +39,7 @@ def get_twitch_info(url):
         print("Error parsing twitch-dl output JSON.")
         return None
 
-def download_video(url, root_dir=".", audio_only=False):
+def download_video(url, root_dir=".", audio=False):
     if not validate_twitch_url(url):
         print(f"Warning: URL format check passed, but might not be standard Twitch VOD URL: {url}")
 
@@ -56,7 +57,8 @@ def download_video(url, root_dir=".", audio_only=False):
         sys.exit(1)
 
     # Use custom title, streamer uses same title for their VODs
-    title = info.get(f"Twitch_VOD_{info.get('channel')}_{info.get('datetime')}")
+    creator = info.get('creator') or {}
+    title = f'Twitch_VOD_{creator.get('displayName')}_{info.get('createdAt')}'
     description = info.get("description") # Can be None
     if description is None:
          description = "No description available."
@@ -81,6 +83,7 @@ def download_video(url, root_dir=".", audio_only=False):
     # 2. Download via twitch-dl
     # twitch-dl download <url> -q source -o <file> --overwrite
     output_template = os.path.join(output_dir, "original.mp4")
+    audio_template = os.path.join(output_dir, "audio.mp4")
 
     print(f"Downloading video '{title}' via twitch-dl...")
     
@@ -103,8 +106,7 @@ def download_video(url, root_dir=".", audio_only=False):
         sys.exit(1)
 
     # 2.5 Audio Download (if requested)
-    if audio_only:
-        audio_template = os.path.join(output_dir, "audio.mp4")
+    if audio:
         print(f"Downloading Audio Only '{title}'...")
         
         cmd_audio = [
@@ -138,10 +140,16 @@ def download_video(url, root_dir=".", audio_only=False):
     print("Starting transcription...")
     try:
         transcribe_video(
-            input_file=output_template,
+            input_file=audio_template,
         )
     except Exception as e:
         print(f"Transcription failed: {str(e)}")
+
+    # 5. N8N Trigger
+    try:
+        n8n.trigger('analyze', safe_title)
+    except Exception as e:
+        print(f"N8N Trigger failed: {e}")
 
     print("\nDone!")
 
@@ -149,10 +157,10 @@ def main():
     parser = argparse.ArgumentParser(description="Twitch Downloader (twitch-dl)")
     parser.add_argument("url", help="Twitch VOD URL")
     parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
-    parser.add_argument("--audio", action='store_true', default=False, help="Also download audio track as audio.mp4")
+    parser.add_argument("--audio", action='store_true', default=True, help="Also download audio track as audio.mp4")
     args = parser.parse_args()
 
-    download_video(args.url, root_dir=args.root_dir, audio_only=args.audio)
+    download_video(args.url, root_dir=args.root_dir, audio=args.audio)
 
 if __name__ == "__main__":
     main()
