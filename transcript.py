@@ -315,7 +315,7 @@ def main():
     parser.add_argument("--compute_type", default="int8", help="int8 or float16")
     parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
-    parser.add_argument("--no-split-by-hour", action="store_true", help="Disable splitting transcript by hour")
+    parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
 
     args = parser.parse_args()
 
@@ -326,9 +326,8 @@ def main():
             model_size=args.model_size,
             device=args.device,
             compute_type=args.compute_type,
-            translation_engine=args.translation_engine,
             ollama_model=args.ollama_model,
-            split_by_hour=not args.no_split_by_hour
+            split_by_hour=args.split_by_hour
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
