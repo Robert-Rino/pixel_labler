@@ -102,7 +102,7 @@ def split_srt_by_hour(input_srt):
 
     print(f"Splitting SRT by hour: {input_srt}")
     
-    base_name = os.path.splitext(input_srt)[0] # e.g. /path/to/transcript
+    base_name = os.path.dirname(input_srt)[0] # e.g. /path/to/transcript
     # We want transcript-0.srt
     
     current_hour = -1
@@ -149,7 +149,17 @@ def split_srt_by_hour(input_srt):
                         current_file.close()
                     
                     current_hour = hour
-                    output_filename = f"{base_name}-{current_hour}.srt"
+                    
+                    # Output to {base_name}/transcript-chunked/
+                    output_dir = os.path.join(base_name, "transcript-chunked")
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    
+                    # Filename: transcript-0.srt inside the folder
+                    # Use os.path.basename(base_name) to get "transcript"
+                    filename_only = f"{os.path.basename(base_name)}-{current_hour}.srt"
+                    output_filename = os.path.join(output_dir, filename_only)
+                    
                     print(f"Creating hourly split: {output_filename}")
                     current_file = open(output_filename, 'w', encoding='utf-8')
                     # Reset counter for new file? Usually valid SRTs start at 1.
@@ -194,7 +204,8 @@ def transcribe_video(
     device: str = "auto",
     compute_type: str = "int8",
     translation_engine: str = "ollama",
-    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF"
+    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
+    split_by_hour: bool = True
 ):
     """
     Core function to transcribe and optionally translate a video file.
@@ -206,7 +217,9 @@ def transcribe_video(
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
         translation_engine: "ollama" or "argostranslate" (default: "ollama").
+        translation_engine: "ollama" or "argostranslate" (default: "ollama").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
+        split_by_hour: Whether to split the transcript into hourly chunks (default: True).
     """
     input_path = os.path.abspath(input_file)
     if not os.path.exists(input_path):
@@ -333,7 +346,8 @@ def transcribe_video(
     print("Done!")
     
     # Split original transcript by hour
-    if os.path.exists(original_output):
+    # Split original transcript by hour
+    if split_by_hour and os.path.exists(original_output):
          split_srt_by_hour(original_output)
 
 def main():
@@ -345,6 +359,7 @@ def main():
     parser.add_argument("--translation_engine", default="ollama", choices=["ollama", "argostranslate"], help="Translation engine to use")
     parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
+    parser.add_argument("--no-split-by-hour", action="store_true", help="Disable splitting transcript by hour")
 
     args = parser.parse_args()
 
@@ -356,15 +371,12 @@ def main():
             device=args.device,
             compute_type=args.compute_type,
             translation_engine=args.translation_engine,
-            ollama_model=args.ollama_model
+            ollama_model=args.ollama_model,
+            split_by_hour=not args.no_split_by_hour
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
-    # main()
-    parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
-    parser.add_argument("input_file", help="Path to input video/audio file")
-    args = parser.parse_args()
-    split_srt_by_hour(args.input_file)
+    main()
