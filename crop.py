@@ -162,7 +162,7 @@ def process(root_dir, crop_cam, crop_screen):
                 f"[0:v]crop={crop_screen},scale=1080:960,split=2[screen_base][screen_stack]; "
                 
                 # 2. Stack
-                f"[screen_stack][cam_stack]vstack=inputs=2[stacked_base]; "
+                f"[cam_stack][screen_stack]vstack=inputs=2[stacked_base]; "
                 
                 # 3. Apply Watermark
                 f"[stacked_base]{WATERMARK_FILTER}[stacked_out]; "
