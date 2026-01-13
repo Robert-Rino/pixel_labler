@@ -6,6 +6,8 @@ import requests
 import json
 from datetime import timedelta
 from faster_whisper import WhisperModel
+import assemblyai as aai
+import srt
 
 def str_to_bool(value):
     if isinstance(value, bool):
@@ -85,6 +87,7 @@ def translate_srt_zh(
     with open(zh_output, "w", encoding="utf-8") as zh_file:
         for line in srt_parsed:
                 translated = translate_with_ollama(line.content, model=ollama_model)
+                line.content = translated
                 zh_file.write(line.to_srt())
                 zh_file.flush()
 
@@ -204,6 +207,7 @@ def transcribe_video(
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
+    engine: str = "assemblyai"
 ):
     """
     Core function to transcribe and optionally translate a video file.
@@ -214,47 +218,77 @@ def transcribe_video(
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
+        engine: "assemblyai" or "faster_whisper" (default: "assemblyai").
     """
-    # 1. Setup Device
-    if device == "auto":
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+    segments = []
     
-    print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
-    
-    
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
-
-    print("Starting Analysis & Transcription...")
-    
-    segments, info = model.transcribe(
-        input_file, 
-        vad_filter=True,
-    )
-
-    # info is returned immediately by faster-whisper
-    info_language = info.language
-    print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
-    print(f"Writing original transcript to: {output_file}")
-    
-    # Open files
-    f_orig = open(output_file, "w", encoding="utf-8")
-    
-    with open(output_file, "w", encoding="utf-8") as f_orig:
-        count = 1
-        for segment in segments:
-            start_time = format_timestamp(segment.start)
-            end_time = format_timestamp(segment.end)
-            text = segment.text.strip()
+    if engine == "assemblyai":
+        api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+        if not api_key:
+            print("Error: ASSEMBLYAI_API_KEY environment variable not set.")
+            sys.exit(1)
             
-            # Write Original
-            print(f"[{start_time} --> {end_time}] {text}")
-            f_orig.write(f"{count}\n")
-            f_orig.write(f"{start_time} --> {end_time}\n")
-            f_orig.write(f"{text}\n\n")
-            f_orig.flush()
+        aai.settings.api_key = api_key
+        transcriber = aai.Transcriber()
+        config = aai.TranscriptionConfig(language_detection=True)
+        
+        print(f"Starting Analysis & Transcription (AssemblyAI)...")
+        transcript = transcriber.transcribe(input_file, config=config)
+        
+        if transcript.status == aai.TranscriptStatus.error:
+            print(f"AssemblyAI Error: {transcript.error}")
+            sys.exit(1)
+        
+        srt_result = transcript.export_subtitles_srt(
+            # Optional: Customize the maximum number of characters per caption
+            chars_per_caption=32
+        )
 
-            count += 1
+        print(f"Writing original transcript to: {output_file}")
+        with open(output_file, "w", encoding="utf-8") as f_orig:
+          f_orig.write(srt_result)
+        
+    else:
+        # Default: faster_whisper
+        # 1. Setup Device
+        if device == "auto":
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
+        
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+
+        print("Starting Analysis & Transcription (faster-whisper)...")
+        
+        segments_gen, info = model.transcribe(
+            input_file, 
+            vad_filter=True,
+        )
+
+        # info is returned immediately by faster-whisper
+        info_language = info.language
+        print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
+        segments = segments_gen
+
+        print(f"Writing original transcript to: {output_file}")
+        
+        # Open files
+        with open(output_file, "w", encoding="utf-8") as f_orig:
+            count = 1
+            for segment in segments:
+                start_time = format_timestamp(segment.start)
+                end_time = format_timestamp(segment.end)
+                text = segment.text.strip()
+                
+                # Write Original
+                print(f"[{start_time} --> {end_time}] {text}")
+                f_orig.write(f"{count}\n")
+                f_orig.write(f"{start_time} --> {end_time}\n")
+                f_orig.write(f"{text}\n\n")
+                f_orig.flush()
+
+                count += 1
 
     print("Done!")
 
@@ -264,6 +298,7 @@ def main():
     parser.add_argument("input_file", help="Path to input video/audio file")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
+    parser.add_argument("--engine", default="assemblyai", choices=["assemblyai", "faster_whisper"], help="Transcription engine to use")
 
     args = parser.parse_args()
     input_file = os.path.abspath(args.input_file)
@@ -278,6 +313,7 @@ def main():
         transcribe_video(
             input_file=input_file,
             output_file=original_output,
+            engine=args.engine
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
