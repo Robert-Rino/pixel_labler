@@ -200,37 +200,21 @@ def split_srt_by_hour(input_srt):
 
 def transcribe_video(
     input_file: str,
-    zh_output: str = None,
+    output_file: str,
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    split_by_hour: bool = True
 ):
     """
     Core function to transcribe and optionally translate a video file.
     
     Args:
         input_file: Path to the input video/audio file.
-        zh_output: Path to save the translated Chinese SRT file (optional).
         model_size: Whisper model size (default: "medium").
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
-        split_by_hour: Whether to split the transcript into hourly chunks (default: True).
     """
-    input_path = os.path.abspath(input_file)
-    if not os.path.exists(input_path):
-        raise FileNotFoundError(f"Input file not found: {input_path}")
-        
-    # Resolve output file paths
-    # Original transcript always goes to transcript.srt in the same directory as input
-    original_output = os.path.join(os.path.dirname(input_path), "transcript.srt")
-
-    # Resolve zh_output if provided
-    if zh_output:
-        if not os.path.isabs(zh_output) and os.path.dirname(zh_output) == "":
-            zh_output = os.path.join(os.path.dirname(input_path), zh_output)
-
     # 1. Setup Device
     if device == "auto":
         import torch
@@ -244,19 +228,19 @@ def transcribe_video(
     print("Starting Analysis & Transcription...")
     
     segments, info = model.transcribe(
-        input_path, 
+        input_file, 
         vad_filter=True,
     )
 
     # info is returned immediately by faster-whisper
     info_language = info.language
     print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
-    print(f"Writing original transcript to: {original_output}")
+    print(f"Writing original transcript to: {output_file}")
     
     # Open files
-    f_orig = open(original_output, "w", encoding="utf-8")
+    f_orig = open(output_file, "w", encoding="utf-8")
     
-    with open(original_output, "w", encoding="utf-8") as f_orig:
+    with open(output_file, "w", encoding="utf-8") as f_orig:
         count = 1
         for segment in segments:
             start_time = format_timestamp(segment.start)
@@ -273,38 +257,42 @@ def transcribe_video(
             count += 1
 
     print("Done!")
-    
-    # Split original transcript by hour
-    if split_by_hour and os.path.exists(original_output):
-         split_srt_by_hour(original_output)
-
-    if zh_output:
-        translate_srt_zh(original_output, zh_output=zh_output)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
     parser.add_argument("input_file", help="Path to input video/audio file")
-    parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
-    parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
-    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
 
     args = parser.parse_args()
+    input_file = os.path.abspath(args.input_file)
 
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"Input file not found: {input_file}")
+        
+    # Resolve output file paths
+    # Original transcript always goes to transcript.srt in the same directory as input
+    original_output = os.path.join(os.path.dirname(input_file), "transcript.srt")
     try:
         transcribe_video(
-            input_file=args.input_file,
-            zh_output=args.zh_output,
-            model_size=args.model_size,
-            device=args.device,
-            compute_type=args.compute_type,
-            split_by_hour=args.split_by_hour
+            input_file=input_file,
+            output_file=original_output,
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
         sys.exit(1)
+
+    if args.split_by_hour:
+        split_srt_by_hour(original_output)
+
+    # Resolve zh_output if provided
+    if args.zh_output:
+        if not os.path.isabs(args.zh_output) and os.path.dirname(args.zh_output) == "":
+            zh_output = os.path.join(os.path.dirname(input_file), args.zh_output)
+
+        translate_srt_zh(original_output, zh_output=zh_output)
+
 
 if __name__ == "__main__":
     main()
