@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "argostranslate>=1.10.0",
+    "assemblyai>=0.48.4",
     "faster-whisper>=1.2.1",
     "google-genai>=1.56.0",
     "ipython>=9.8.0",
@@ -15,6 +16,7 @@ dependencies = [
     "pillow>=12.0.0",
     "pip>=25.3",
     "requests>=2.32.5",
+    "srt>=3.5.3",
     "streamlink>=8.1.0",
     "twitch-dl>=3.3.0",
     "yt-dlp>=2025.12.8",

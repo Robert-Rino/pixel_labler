@@ -6,6 +6,8 @@ import requests
 import json
 from datetime import timedelta
 from faster_whisper import WhisperModel
+import assemblyai as aai
+import srt
 
 def str_to_bool(value):
     if isinstance(value, bool):
@@ -65,6 +67,33 @@ def translate_with_ollama(text, model="llama3"):
     except requests.exceptions.RequestException as e:
         print(f"Ollama Translation Error: {e}")
         return text # Return original text on error
+
+
+def translate_srt_zh(
+    original_output, 
+    zh_output, 
+    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
+):
+    print(f"Translation enabled (Ollama: {ollama_model})...")
+    try:
+        requests.get("http://localhost:11434")
+        print("Ollama connection established.")
+    except requests.exceptions.ConnectionError:
+        print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
+
+    with open(original_output, "r", encoding="utf-8") as f_orig:
+        srt_parsed = srt.parse(f_orig.read() )
+
+    with open(zh_output, "w", encoding="utf-8") as zh_file:
+        for line in srt_parsed:
+                translated = translate_with_ollama(line.content, model=ollama_model)
+                line.content = translated
+                zh_file.write(line.to_srt())
+                zh_file.flush()
+
+    print(f"Translation completed")
+    
+
 
 
 def split_srt_by_hour(input_srt):
@@ -174,164 +203,132 @@ def split_srt_by_hour(input_srt):
 
 def transcribe_video(
     input_file: str,
-    zh_output: str = None,
+    output_file: str,
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
-    split_by_hour: bool = True
+    engine: str = "assemblyai"
 ):
     """
     Core function to transcribe and optionally translate a video file.
     
     Args:
         input_file: Path to the input video/audio file.
-        zh_output: Path to save the translated Chinese SRT file (optional).
         model_size: Whisper model size (default: "medium").
         device: "cuda", "cpu", or "auto" (default: "auto").
         compute_type: "int8" or "float16" (default: "int8").
         ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
-        split_by_hour: Whether to split the transcript into hourly chunks (default: True).
+        engine: "assemblyai" or "faster_whisper" (default: "assemblyai").
     """
-    input_path = os.path.abspath(input_file)
-    if not os.path.exists(input_path):
-        raise FileNotFoundError(f"Input file not found: {input_path}")
+    segments = []
+    
+    if engine == "assemblyai":
+        api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+        if not api_key:
+            print("Error: ASSEMBLYAI_API_KEY environment variable not set.")
+            sys.exit(1)
+            
+        aai.settings.api_key = api_key
+        transcriber = aai.Transcriber()
+        config = aai.TranscriptionConfig(language_detection=True)
         
-    # Resolve output file paths
-    # Original transcript always goes to transcript.srt in the same directory as input
-    original_output = os.path.join(os.path.dirname(input_path), "transcript.srt")
+        print(f"Starting Analysis & Transcription (AssemblyAI)...")
+        transcript = transcriber.transcribe(input_file, config=config)
+        
+        if transcript.status == aai.TranscriptStatus.error:
+            print(f"AssemblyAI Error: {transcript.error}")
+            sys.exit(1)
+        
+        srt_result = transcript.export_subtitles_srt(
+            # Optional: Customize the maximum number of characters per caption
+            chars_per_caption=32
+        )
 
-    # Resolve zh_output if provided
-    if zh_output:
-        if not os.path.isabs(zh_output) and os.path.dirname(zh_output) == "":
-            zh_output = os.path.join(os.path.dirname(input_path), zh_output)
+        print(f"Writing original transcript to: {output_file}")
+        with open(output_file, "w", encoding="utf-8") as f_orig:
+          f_orig.write(srt_result)
+        
+    else:
+        # Default: faster_whisper
+        # 1. Setup Device
+        if device == "auto":
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
+        
+        model = WhisperModel(model_size, device=device, compute_type=compute_type)
 
-    # 1. Setup Device
-    if device == "auto":
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    
-    print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
-    
-    
-    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        print("Starting Analysis & Transcription (faster-whisper)...")
+        
+        segments_gen, info = model.transcribe(
+            input_file, 
+            vad_filter=True,
+        )
 
-    print("Starting Analysis & Transcription...")
-    
-    segments, info = model.transcribe(
-        input_path, 
-        vad_filter=True,
-    )
+        # info is returned immediately by faster-whisper
+        info_language = info.language
+        print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
+        segments = segments_gen
 
-    # info is returned immediately by faster-whisper
-    info_language = info.language
-    print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
-    
-    # Common Info variables for translation logic
-    # (info object was faster-whisper specific, replaced with local vars)
-
-    # Prepare Translation if needed
-    need_translate = False
-    converter = None
-    
-    if zh_output:
-        # Check if we should translate (e.g. if original is not Chinese? Or always if requested?)
-        # User request: "if zh_output present, translate..." impliying always attempt translation
-        # But logically only if not already Chinese?
-        # User said: "translate the whisper output into Traditional Chinese"
-        # I will assume always translate unless it IS Chinese, but the prompt implies translate FROM whatever.
-        # However, checking if info.language == "zh" might save effort?
-        # But maybe user wants to enforce TC style even if source is SC?
-        pass # We will proceed to translate if zh_output is set.
-
-        print(f"Translation enabled (Ollama: {ollama_model})...")
-        try:
-            requests.get("http://localhost:11434")
-            print("Ollama connection established.")
-        except requests.exceptions.ConnectionError:
-            print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-            zh_output = None # Disable translation
-    
-    print(f"Writing original transcript to: {original_output}")
-    if zh_output:
-        print(f"Writing translated transcript to: {zh_output}")
-    
-    # Open files
-    f_orig = open(original_output, "w", encoding="utf-8")
-    f_zh = open(zh_output, "w", encoding="utf-8") if zh_output else None
-    
-    try:
-        count = 1
-        for segment in segments:
-            start_time = format_timestamp(segment.start)
-            end_time = format_timestamp(segment.end)
-            text = segment.text.strip()
-            
-            # Write Original
-            print(f"[{start_time} --> {end_time}] {text}")
-            f_orig.write(f"{count}\n")
-            f_orig.write(f"{start_time} --> {end_time}\n")
-            f_orig.write(f"{text}\n\n")
-            f_orig.flush()
-
-            # Translate if needed
-            if f_zh:
-                translated = text
-                # Logic: Translate if needed. 
-                # If source is EN, we can use argos/ollama.
-                # If source is other, argos only supports en->zh usually? 
-                # Ollama can try anything.
-                # Assuming source is English-ish or Ollama can handle it.
+        print(f"Writing original transcript to: {output_file}")
+        
+        # Open files
+        with open(output_file, "w", encoding="utf-8") as f_orig:
+            count = 1
+            for segment in segments:
+                start_time = format_timestamp(segment.start)
+                end_time = format_timestamp(segment.end)
+                text = segment.text.strip()
                 
-                translated = translate_with_ollama(text, model=ollama_model)
-                
-                if not translated:
-                   translated = text 
-                
-                print(f"[{start_time} --> {end_time}] {translated}")
-                f_zh.write(f"{count}\n")
-                f_zh.write(f"{start_time} --> {end_time}\n")
-                f_zh.write(f"{translated}\n\n")
-                f_zh.flush()
+                # Write Original
+                print(f"[{start_time} --> {end_time}] {text}")
+                f_orig.write(f"{count}\n")
+                f_orig.write(f"{start_time} --> {end_time}\n")
+                f_orig.write(f"{text}\n\n")
+                f_orig.flush()
 
-            count += 1
-            
-    finally:
-        f_orig.close()
-        if f_zh:
-            f_zh.close()
+                count += 1
 
     print("Done!")
-    
-    # Split original transcript by hour
-    if split_by_hour and os.path.exists(original_output):
-         split_srt_by_hour(original_output)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
     parser.add_argument("input_file", help="Path to input video/audio file")
-    parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
-    parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
-    parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
+    parser.add_argument("--engine", default="assemblyai", choices=["assemblyai", "faster_whisper"], help="Transcription engine to use")
 
     args = parser.parse_args()
+    input_file = os.path.abspath(args.input_file)
 
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"Input file not found: {input_file}")
+        
+    # Resolve output file paths
+    # Original transcript always goes to transcript.srt in the same directory as input
+    original_output = os.path.join(os.path.dirname(input_file), "transcript.srt")
     try:
         transcribe_video(
-            input_file=args.input_file,
-            zh_output=args.zh_output,
-            model_size=args.model_size,
-            device=args.device,
-            compute_type=args.compute_type,
-            ollama_model=args.ollama_model,
-            split_by_hour=args.split_by_hour
+            input_file=input_file,
+            output_file=original_output,
+            engine=args.engine
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
         sys.exit(1)
+
+    if args.split_by_hour:
+        split_srt_by_hour(original_output)
+
+    # Resolve zh_output if provided
+    if args.zh_output:
+        if not os.path.isabs(args.zh_output) and os.path.dirname(args.zh_output) == "":
+            zh_output = os.path.join(os.path.dirname(input_file), args.zh_output)
+
+        translate_srt_zh(original_output, zh_output=zh_output)
+
 
 if __name__ == "__main__":
     main()
