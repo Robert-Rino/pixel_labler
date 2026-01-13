@@ -67,6 +67,32 @@ def translate_with_ollama(text, model="llama3"):
         return text # Return original text on error
 
 
+def translate_srt_zh(
+    original_output, 
+    zh_output, 
+    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
+):
+    print(f"Translation enabled (Ollama: {ollama_model})...")
+    try:
+        requests.get("http://localhost:11434")
+        print("Ollama connection established.")
+    except requests.exceptions.ConnectionError:
+        print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
+
+    with open(original_output, "r", encoding="utf-8") as f_orig:
+        srt_parsed = srt.parse(f_orig.read() )
+
+    with open(zh_output, "w", encoding="utf-8") as zh_file:
+        for line in srt_parsed:
+                translated = translate_with_ollama(line.content, model=ollama_model)
+                zh_file.write(line.to_srt())
+                zh_file.flush()
+
+    print(f"Translation completed")
+    
+
+
+
 def split_srt_by_hour(input_srt):
     """
     Split a large SRT file into multiple files based on hour.
@@ -178,7 +204,6 @@ def transcribe_video(
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
     split_by_hour: bool = True
 ):
     """
@@ -226,41 +251,12 @@ def transcribe_video(
     # info is returned immediately by faster-whisper
     info_language = info.language
     print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
-    
-    # Common Info variables for translation logic
-    # (info object was faster-whisper specific, replaced with local vars)
-
-    # Prepare Translation if needed
-    need_translate = False
-    converter = None
-    
-    if zh_output:
-        # Check if we should translate (e.g. if original is not Chinese? Or always if requested?)
-        # User request: "if zh_output present, translate..." impliying always attempt translation
-        # But logically only if not already Chinese?
-        # User said: "translate the whisper output into Traditional Chinese"
-        # I will assume always translate unless it IS Chinese, but the prompt implies translate FROM whatever.
-        # However, checking if info.language == "zh" might save effort?
-        # But maybe user wants to enforce TC style even if source is SC?
-        pass # We will proceed to translate if zh_output is set.
-
-        print(f"Translation enabled (Ollama: {ollama_model})...")
-        try:
-            requests.get("http://localhost:11434")
-            print("Ollama connection established.")
-        except requests.exceptions.ConnectionError:
-            print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-            zh_output = None # Disable translation
-    
     print(f"Writing original transcript to: {original_output}")
-    if zh_output:
-        print(f"Writing translated transcript to: {zh_output}")
     
     # Open files
     f_orig = open(original_output, "w", encoding="utf-8")
-    f_zh = open(zh_output, "w", encoding="utf-8") if zh_output else None
     
-    try:
+    with open(original_output, "w", encoding="utf-8") as f_orig:
         count = 1
         for segment in segments:
             start_time = format_timestamp(segment.start)
@@ -274,32 +270,7 @@ def transcribe_video(
             f_orig.write(f"{text}\n\n")
             f_orig.flush()
 
-            # Translate if needed
-            if f_zh:
-                translated = text
-                # Logic: Translate if needed. 
-                # If source is EN, we can use argos/ollama.
-                # If source is other, argos only supports en->zh usually? 
-                # Ollama can try anything.
-                # Assuming source is English-ish or Ollama can handle it.
-                
-                translated = translate_with_ollama(text, model=ollama_model)
-                
-                if not translated:
-                   translated = text 
-                
-                print(f"[{start_time} --> {end_time}] {translated}")
-                f_zh.write(f"{count}\n")
-                f_zh.write(f"{start_time} --> {end_time}\n")
-                f_zh.write(f"{translated}\n\n")
-                f_zh.flush()
-
             count += 1
-            
-    finally:
-        f_orig.close()
-        if f_zh:
-            f_zh.close()
 
     print("Done!")
     
@@ -307,13 +278,16 @@ def transcribe_video(
     if split_by_hour and os.path.exists(original_output):
          split_srt_by_hour(original_output)
 
+    if zh_output:
+        translate_srt_zh(original_output, zh_output=zh_output)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
     parser.add_argument("input_file", help="Path to input video/audio file")
     parser.add_argument("--model_size", default="medium", help="Whisper model size (small, medium, large-v3)")
     parser.add_argument("--device", default="auto", help="cuda or cpu (auto detects)")
     parser.add_argument("--compute_type", default="int8", help="int8 or float16")
-    parser.add_argument("--ollama_model", default="hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF", help="Ollama model to use for translation")
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
 
@@ -326,7 +300,6 @@ def main():
             model_size=args.model_size,
             device=args.device,
             compute_type=args.compute_type,
-            ollama_model=args.ollama_model,
             split_by_hour=args.split_by_hour
         )
     except Exception as e:

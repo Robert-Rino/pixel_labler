@@ -2,7 +2,8 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.13'",
+    "python_full_version >= '3.14'",
+    "python_full_version == '3.13.*'",
     "python_full_version < '3.13'",
 ]
 
@@ -43,6 +44,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4f/ee/244eedf38763cadc60e8949995a38ec2f4826e4e38bc6cc3a63f77455ecd/argostranslate-1.10.0.tar.gz", hash = "sha256:237f0bdaef5a45aade034ac712c1d0c18fd42887fc08141808dcadde7bfd1f67", size = 38918, upload-time = "2025-10-21T09:36:14.419Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2e/85/b57ab349f9f9e657e71987ee3ac2de2781ed4fe9519ee3b2479331aaf504/argostranslate-1.10.0-py3-none-any.whl", hash = "sha256:1022d485e2abe28b9d4c072343fd3de89bf6e7654e257c4bbe8d4422b745f860", size = 41143, upload-time = "2025-10-21T09:36:13.313Z" },
+]
+
+[[package]]
+name = "assemblyai"
+version = "0.48.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-settings", marker = "python_full_version >= '3.14'" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/82/19/57ee0680d8afaa1d354833a35b8ff4ab4cd946734fa3876bedae8cc6ab08/assemblyai-0.48.4.tar.gz", hash = "sha256:a7ec007b6d3079d38a4a5c39ea7c733067785e1a30151a6f01aef7728c1bb659", size = 56367, upload-time = "2025-12-17T22:37:42.135Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ae/e3/a21e7fe81e056930ca0b6fd9ddfd1713322560762f8662605e493619da49/assemblyai-0.48.4-py3-none-any.whl", hash = "sha256:cf56b71f205e341b650cb2668e382181c01082b95873bea4dc7450fe1647083d", size = 52376, upload-time = "2025-12-17T22:37:40.97Z" },
 ]
 
 [[package]]
@@ -1040,7 +1057,8 @@ name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version >= '3.13'",
+    "python_full_version >= '3.14'",
+    "python_full_version == '3.13.*'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/76/21/7d2a95e4bba9dc13d043ee156a356c0a8f0c6309dff6b21b4d71a073b8a8/numpy-2.2.6.tar.gz", hash = "sha256:e29554e2bef54a90aa5cc07da6ce955accb83f21ab5de01a62c8478897b264fd", size = 20276440, upload-time = "2025-05-17T22:38:04.611Z" }
 wheels = [
@@ -1383,6 +1401,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "argostranslate" },
+    { name = "assemblyai" },
     { name = "faster-whisper" },
     { name = "google-genai" },
     { name = "ipython" },
@@ -1392,6 +1411,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pip" },
     { name = "requests" },
+    { name = "srt" },
     { name = "streamlink" },
     { name = "twitch-dl" },
     { name = "yt-dlp" },
@@ -1400,6 +1420,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "argostranslate", specifier = ">=1.10.0" },
+    { name = "assemblyai", specifier = ">=0.48.4" },
     { name = "faster-whisper", specifier = ">=1.2.1" },
     { name = "google-genai", specifier = ">=1.56.0" },
     { name = "ipython", specifier = ">=9.8.0" },
@@ -1409,6 +1430,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "pip", specifier = ">=25.3" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "srt", specifier = ">=3.5.3" },
     { name = "streamlink", specifier = ">=8.1.0" },
     { name = "twitch-dl", specifier = ">=3.3.0" },
     { name = "yt-dlp", specifier = ">=2025.12.8" },
@@ -1659,6 +1681,20 @@ wheels = [
 ]
 
 [[package]]
+name = "pydantic-settings"
+version = "2.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic", marker = "python_full_version >= '3.14'" },
+    { name = "python-dotenv", marker = "python_full_version >= '3.14'" },
+    { name = "typing-inspection", marker = "python_full_version >= '3.14'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/4b/ac7e0aae12027748076d72a8764ff1c9d82ca75a7a52622e67ed3f765c54/pydantic_settings-2.12.0.tar.gz", hash = "sha256:005538ef951e3c2a68e1c08b292b5f2e71490def8589d4221b95dab00dafcfd0", size = 194184, upload-time = "2025-11-10T14:25:47.013Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/60/5d4751ba3f4a40a6891f24eec885f51afd78d208498268c734e256fb13c4/pydantic_settings-2.12.0-py3-none-any.whl", hash = "sha256:fddb9fd99a5b18da837b29710391e945b1e30c135477f484084ee513adb93809", size = 51880, upload-time = "2025-11-10T14:25:45.546Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1683,6 +1719,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
+name = "python-dotenv"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/26/19cadc79a718c5edbec86fd4919a6b6d3f681039a2f6d66d14be94e75fb9/python_dotenv-1.2.1.tar.gz", hash = "sha256:42667e897e16ab0d66954af0e60a9caa94f0fd4ecf3aaf6d2d260eec1aa36ad6", size = 44221, upload-time = "2025-10-26T15:12:10.434Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/1b/a298b06749107c305e1fe0f814c6c74aea7b2f1e10989cb30f544a1b3253/python_dotenv-1.2.1-py3-none-any.whl", hash = "sha256:b81ee9561e9ca4004139c6cbba3a238c32b03e4894671e181b671e8cb8425d61", size = 21230, upload-time = "2025-10-26T15:12:09.109Z" },
 ]
 
 [[package]]
@@ -2109,6 +2154,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/26/50/92bf62dfb19532b823ef52251bb7003149e1d4a89f50a63332c8ff5f894b/srsly-2.5.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:74a9338fcc044f4bdc7113b2d9db2db8e0a263c69f1cba965acf12c845d8b365", size = 1244935, upload-time = "2025-11-17T14:10:42.324Z" },
     { url = "https://files.pythonhosted.org/packages/95/81/6ea10ef6228ce4438a240c803639f7ccf5eae3469fbc015f33bd84aa8df1/srsly-2.5.2-cp314-cp314t-win_amd64.whl", hash = "sha256:8e2b9058623c44b07441eb0d711dfdf6302f917f0634d0a294cae37578dcf899", size = 676105, upload-time = "2025-11-17T14:10:43.633Z" },
 ]
+
+[[package]]
+name = "srt"
+version = "3.5.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/b7/4a1bc231e0681ebf339337b0cd05b91dc6a0d701fa852bb812e244b7a030/srt-3.5.3.tar.gz", hash = "sha256:4884315043a4f0740fd1f878ed6caa376ac06d70e135f306a6dc44632eed0cc0", size = 28296, upload-time = "2023-03-28T02:35:44.007Z" }
 
 [[package]]
 name = "stack-data"
