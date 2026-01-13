@@ -4,7 +4,7 @@ import re
 import argparse
 import sys
 import sys
-from transcript import transcribe_video
+from transcript import transcribe_video, translate_srt_zh 
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
 # defaults
@@ -202,16 +202,25 @@ def process(root_dir, crop_cam, crop_screen):
             if result.returncode != 0:
                 print(f"FFmpeg 錯誤:\\n{result.stderr}")
             else:
-                # Transcribe raw.mp4
-                print("正在產生字幕 (zh.srt)...")
+                # Transcribe audio.mp4
+                print("正在產生字幕...")
                 try:
                     transcribe_video(
-                        input_file=path_raw,
-                        zh_output=os.path.join(output_folder, "zh.srt"),    
-                        split_by_hour=False,
+                        input_file=path_audio,
+                        output_file=os.path.join(output_folder, "transcript.srt"),
                     )
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")
+
+                # Translate transcript.srt to zh.srt
+                print("正在翻譯字幕...")
+                try:
+                    translate_srt_zh(
+                        os.path.join(output_folder, "transcript.srt"),
+                        os.path.join(output_folder, "zh.srt")
+                    )
+                except Exception as e:
+                    print(f"字幕翻譯失敗: {e}")
         else:
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
