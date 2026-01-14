@@ -793,15 +793,6 @@ wheels = [
 ]
 
 [[package]]
-name = "m3u8"
-version = "6.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/9b/a5/73697aaa99bb32b610adc1f11d46a0c0c370351292e9b271755084a145e6/m3u8-6.0.0.tar.gz", hash = "sha256:7ade990a1667d7a653bcaf9413b16c3eb5cd618982ff46aaff57fe6d9fa9c0fd", size = 42720, upload-time = "2024-08-07T11:20:06.606Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/31/50f3c38b38ff28635ff9c4a4afefddccc5f1b57457b539bdbdf75ce18669/m3u8-6.0.0-py3-none-any.whl", hash = "sha256:566d0748739c552dad10f8c87150078de6a0ec25071fa48e6968e96fc6dcba5d", size = 24133, upload-time = "2024-08-07T11:20:03.96Z" },
-]
-
-[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1413,7 +1404,6 @@ dependencies = [
     { name = "requests" },
     { name = "srt" },
     { name = "streamlink" },
-    { name = "twitch-dl" },
     { name = "yt-dlp" },
 ]
 
@@ -1432,7 +1422,6 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "srt", specifier = ">=3.5.3" },
     { name = "streamlink", specifier = ">=8.1.0" },
-    { name = "twitch-dl", specifier = ">=3.3.0" },
     { name = "yt-dlp", specifier = ">=2025.12.8" },
 ]
 
@@ -2464,21 +2453,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/66/b1eb52839f563623d185f0927eb3530ee4d5ffe9d377cdaf5346b306689e/triton-3.4.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:31c1d84a5c0ec2c0f8e8a072d7fd150cab84a9c239eaddc6706c081bfae4eb04", size = 155560068, upload-time = "2025-07-30T19:58:37.081Z" },
     { url = "https://files.pythonhosted.org/packages/30/7b/0a685684ed5322d2af0bddefed7906674f67974aa88b0fae6e82e3b766f6/triton-3.4.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:00be2964616f4c619193cb0d1b29a99bd4b001d7dc333816073f92cf2a8ccdeb", size = 155569223, upload-time = "2025-07-30T19:58:44.017Z" },
     { url = "https://files.pythonhosted.org/packages/20/63/8cb444ad5cdb25d999b7d647abac25af0ee37d292afc009940c05b82dda0/triton-3.4.0-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7936b18a3499ed62059414d7df563e6c163c5e16c3773678a3ee3d417865035d", size = 155659780, upload-time = "2025-07-30T19:58:51.171Z" },
-]
-
-[[package]]
-name = "twitch-dl"
-version = "3.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "click" },
-    { name = "httpx" },
-    { name = "m3u8" },
-    { name = "wcwidth" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/00/39/95d6f35bbaa4755c0d9a3b58718e9cdd5733e64329a4362d801fa2719442/twitch_dl-3.3.0.tar.gz", hash = "sha256:2d32d92349b6b671baaf0959916ab6361f83b0694811079626c46cb735cb87ee", size = 394994, upload-time = "2025-12-15T16:26:33.601Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/bf/f8423944ba04a8d5a16c660caefed7245f2bd549e4980a79d3877c2e160a/twitch_dl-3.3.0-py3-none-any.whl", hash = "sha256:77333537a553e3bbd06cbb378fd1df085ffb8676a951b773e038ba072fe2a29b", size = 76829, upload-time = "2025-12-15T16:26:31.583Z" },
 ]
 
 [[package]]
