@@ -225,7 +225,11 @@ def process(root_dir, crop_cam, crop_screen):
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
         # 5. 產生 metadata.md
-        clip_metadata = f"# 標題\n{cols[4]}\n\n# 副標題\n{hook_text}"
+        clip_metadata = [
+            f'{start_ts} -> {end_ts}',
+            '# 標題', cols[4]
+            '# 副標題', hook_text,
+        ].join('\n')
         
         final_metadata = clip_metadata
         if root_metadata_content:
