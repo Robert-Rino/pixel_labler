@@ -51,33 +51,27 @@ def get_latest_vod(channel_url):
             # Might be a single video if URL was specific, but for channel it should be entries
             return info
 
-def main():
-    parser = argparse.ArgumentParser(description="Twitch VOD Monitor")
-    parser.add_argument("--channel_url", default="https://www.twitch.tv/zackrawrr", help="Twitch Channel URL")
-    parser.add_argument("--memory_file", default="memory.txt", help="Path to memory file storing last timestamp")
-    
-    args = parser.parse_args()
-    
+DEFAULT_CHANNEL_URL = "https://www.twitch.tv/zackrawrr"
+DEFAULT_MEMORY_FILE = "memory.txt"
+
+def get_new_video(channel_url=DEFAULT_CHANNEL_URL, memory_file=DEFAULT_MEMORY_FILE, update_memory=True):
+    """
+    Checks for a new VOD.
+    If found and newer than memory:
+      - If update_memory=True: updates memory and returns the VOD URL.
+      - If update_memory=False: returns the VOD URL (peek mode).
+    Otherwise returns None.
+    """
     # 1. Get Latest VOD
-    vod_info = get_latest_vod(args.channel_url)
+    vod_info = get_latest_vod(channel_url)
     if not vod_info:
-        sys.exit(1)
+        return None
         
-    # twitch-dl/yt-dlp timestamps are often Unix timestamps (float/int)
-    # The 'url' field is the video URL
     latest_url = vod_info.get('url')
-    # Use 'timestamp' or 'upload_date' for comparison. Timestamp is more precise.
-    # But extract_flat might not have full timestamp. It usually has 'timestamp' if available.
-    # For Twitch VODs flat extraction usually has url, title, id.
-    # If flat extraction misses timestamp, we might need full extraction for that 1 video.
-    
-    # Let's check keys. If timestamp missing, we fetch full info for that single video (fast enough).
-    # Actually, let's just use the ID or URL for uniqueness? 
-    # But user asked for "uploadtime > memory".
     
     # Try fetch full info for the single video to get precise timestamp
     if 'timestamp' not in vod_info:
-        print(f"Fetching full details for candidate: {latest_url}")
+        # print(f"Fetching full details for candidate: {latest_url}")
         with yt_dlp.YoutubeDL({'quiet':True}) as ydl:
             vod_info = ydl.extract_info(latest_url, download=False)
             
@@ -86,12 +80,12 @@ def main():
     
     if latest_ts is None:
         print("Could not determine timestamp for VOD.")
-        sys.exit(1)
+        return None
         
-    print(f"Latest VOD: {latest_title} (TS: {latest_ts})")
+    # print(f"Latest VOD: {latest_title} (TS: {latest_ts})")
 
     # 2. Read Memory
-    memory_path = os.path.abspath(args.memory_file)
+    memory_path = os.path.abspath(memory_file)
     last_ts = 0.0
     
     if os.path.exists(memory_path):
@@ -103,40 +97,63 @@ def main():
         except ValueError:
             print("Invalid memory file content, defaulting to 0.")
     
-    print(f"Last recorded TS: {last_ts}")
+    # print(f"Last recorded TS: {last_ts}")
     
-    # 3. Compare and Trigger
-    # Using a small buffer just in case, or strict >
+    # 3. Compare
     if latest_ts > last_ts:
-        print("New VOD detected! Triggering download...")
+        print(f"[{datetime.datetime.now()}] New VOD detected: {latest_title}")
         
-        # Trigger twitch_download.py
-        # Assuming we are in the repo root or passing full path?
-        # Script location:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        downloader_script = os.path.join(script_dir, "twitch_download.py")
-        
-        cmd = ["uv", "run", downloader_script, latest_url, "--root_dir", DOWNLOAD_DIR]
-        
-        try:
-            # We run synchronously to ensure it finishes? Or maybe we want to detach?
-            # User said "trigger", cron usually waits. Let's run and wait.
-            subprocess.run(cmd, check=True)
-            print("Download process completed successfully.")
-            
+        if update_memory:
             # 4. Update Memory
-            # Only update if download succeeded
-            with open(memory_path, 'w') as f:
-                f.write(str(latest_ts))
-            print(f"Updated memory with TS: {latest_ts}")
+            try:
+                with open(memory_path, 'w') as f:
+                    f.write(str(latest_ts))
+                print(f"Updated memory with TS: {latest_ts}")
+            except Exception as e:
+                print(f"Failed to update memory file: {e}")
+        else:
+            print("Memory update skipped (dry run).")
             
-        except subprocess.CalledProcessError as e:
-            print(f"Download script failed: {e}")
-            # Do NOT update memory so we retry next time?
-            sys.exit(1)
+        return latest_url
             
     else:
-        print("No new VOD found.")
+        # print("No new VOD found.")
+        return None
+
+def main():
+    parser = argparse.ArgumentParser(description="Twitch VOD Monitor")
+    parser.add_argument("--channel_url", default=DEFAULT_CHANNEL_URL, help="Twitch Channel URL")
+    parser.add_argument("--memory_file", default=DEFAULT_MEMORY_FILE, help="Path to memory file storing last timestamp")
+    parser.add_argument("--download", action="store_true", help="If set, triggers download and updates memory.")
+    
+    args = parser.parse_args()
+    
+    # Only update memory if we intend to download
+    new_url = get_new_video(args.channel_url, args.memory_file, update_memory=args.download)
+    
+    if new_url:
+        if args.download:
+            print("Triggering download...")
+            
+            # Script location:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            downloader_script = os.path.join(script_dir, "twitch_download.py")
+            
+            cmd = ["uv", "run", downloader_script, new_url, "--root_dir", DOWNLOAD_DIR]
+            
+            try:
+                # We run synchronously to ensure it finishes? Or maybe we want to detach?
+                # User said "trigger", cron usually waits. Let's run and wait.
+                subprocess.run(cmd, check=True)
+                print("Download process completed successfully.")
+                
+            except subprocess.CalledProcessError as e:
+                print(f"Download script failed: {e}")
+                sys.exit(1)
+        else:
+            print(f"Found new VOD: {new_url}")
+            print("Download skipped. Use --download to trigger download and update memory.")
+
 
 if __name__ == "__main__":
     main()
