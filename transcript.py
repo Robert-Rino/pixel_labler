@@ -230,7 +230,13 @@ def transcribe_video(
             
         aai.settings.api_key = api_key
         transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(language_detection=True)
+        config = aai.TranscriptionConfig(
+            speaker_labels=True,
+            format_text=True,
+            punctuate=True,
+            language_detection=True,
+            # dual_channel=True,
+        )
         
         print(f"Starting Analysis & Transcription (AssemblyAI)...")
         transcript = transcriber.transcribe(input_file, config=config)
