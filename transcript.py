@@ -8,6 +8,7 @@ from datetime import timedelta
 from faster_whisper import WhisperModel
 import assemblyai as aai
 import srt
+from deep_translator import GoogleTranslator
 
 def str_to_bool(value):
     if isinstance(value, bool):
@@ -68,25 +69,45 @@ def translate_with_ollama(text, model="llama3"):
         print(f"Ollama Translation Error: {e}")
         return text # Return original text on error
 
+def translate_with_google(text, target="zh-TW"):
+    """Translate text using Google Translate via deep-translator"""
+    try:
+        # Re-instantiating might be slow if loop, but acceptable for this script scale.
+        # Ideally we'd reuse the translator instance.
+        # But deep_translator is stateless mostly or lightweight.
+        # Let's check `translate_batch` if needed later.
+        return GoogleTranslator(source='auto', target=target).translate(text)
+    except Exception as e:
+        print(f"Google Translation Error: {e}")
+        return text
+
 
 def translate_srt_zh(
     original_output, 
     zh_output, 
     ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
+    translation_engine: str = "google"
 ):
-    print(f"Translation enabled (Ollama: {ollama_model})...")
-    try:
-        requests.get("http://localhost:11434")
-        print("Ollama connection established.")
-    except requests.exceptions.ConnectionError:
-        print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
+    print(f"Translation enabled ({translation_engine})...")
+    
+    if translation_engine == "ollama":
+        try:
+            requests.get("http://localhost:11434")
+            print("Ollama connection established.")
+        except requests.exceptions.ConnectionError:
+            print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
+            return
 
     with open(original_output, "r", encoding="utf-8") as f_orig:
         srt_parsed = srt.parse(f_orig.read() )
 
     with open(zh_output, "w", encoding="utf-8") as zh_file:
         for line in srt_parsed:
-                translated = translate_with_ollama(line.content, model=ollama_model)
+                if translation_engine == "google":
+                    translated = translate_with_google(line.content, target="zh-TW")
+                else:
+                    translated = translate_with_ollama(line.content, model=ollama_model)
+                
                 line.content = translated
                 zh_file.write(line.to_srt())
                 zh_file.flush()
@@ -305,6 +326,7 @@ def main():
     parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
     parser.add_argument("--engine", default="assemblyai", choices=["assemblyai", "faster_whisper"], help="Transcription engine to use")
+    parser.add_argument("--translation_engine", default="google", choices=["google", "ollama"], help="Translation engine to use (default: google)")
 
     args = parser.parse_args()
     input_file = os.path.abspath(args.input_file)
@@ -333,7 +355,12 @@ def main():
         if not os.path.isabs(args.zh_output) and os.path.dirname(args.zh_output) == "":
             zh_output = os.path.join(os.path.dirname(input_file), args.zh_output)
 
-        translate_srt_zh(original_output, zh_output=zh_output)
+        translate_srt_zh(
+            original_output, 
+            zh_output=zh_output, 
+            ollama_model=args.ollama_model,
+            translation_engine=args.translation_engine
+        )
 
 
 if __name__ == "__main__":
