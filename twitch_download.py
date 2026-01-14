@@ -5,7 +5,7 @@ import re
 import subprocess
 import shutil
 import json
-from transcript import transcribe_video
+import transcript
 import n8n
 
 def clean_filename(text):
@@ -84,6 +84,7 @@ def download_video(url, root_dir=".", audio=False):
     # twitch-dl download <url> -q source -o <file> --overwrite
     output_template = os.path.join(output_dir, "original.mp4")
     audio_template = os.path.join(output_dir, "audio.mp4")
+    srt_output = os.path.join(output_dir, "transcript.srt")
 
     print(f"Downloading video '{title}' via twitch-dl...")
     
@@ -139,11 +140,14 @@ def download_video(url, root_dir=".", audio=False):
     # 4. Auto-Transcribe, always do for twitter
     print("Starting transcription...")
     try:
-        transcribe_video(
+        transcript.transcribe_video(
             input_file=audio_template,
+            output_file=srt_output,
         )
     except Exception as e:
         print(f"Transcription failed: {str(e)}")
+
+    transcript.split_srt_by_hour(srt_output)
 
     # 5. N8N Trigger
     try:
