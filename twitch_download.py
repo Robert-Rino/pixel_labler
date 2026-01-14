@@ -7,65 +7,52 @@ import shutil
 import json
 import transcript
 import n8n
+import yt_dlp
+import datetime
 
 def clean_filename(text):
     """Remove invalid characters for folder names"""
     if not text: return "Untitled"
     return re.sub(r'[\\/*?:"<>|]', "", text).strip()
 
-def validate_twitch_url(url):
-    """Simple validation for Twitch VOD URLs"""
-    twitch_regex = (
-        r'(https?://)?(www\.)?'
-        r'(twitch\.tv|twitch\.com)/'
-        r'(videos|video|v)/'
-        r'(\d+)'
-    )
-    return re.match(twitch_regex, url) is not None
-
-def get_twitch_info(url):
-    """
-    Use 'twitch-dl info <url> --json' to fetch metadata.
-    Returns parsed dict or None.
-    """
-    cmd = ["twitch-dl", "info", url, "--json"]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return json.loads(result.stdout)
-    except subprocess.CalledProcessError as e:
-        print(f"Error fetching metadata with twitch-dl: {e.stderr}")
-        return None
-    except json.JSONDecodeError:
-        print("Error parsing twitch-dl output JSON.")
-        return None
-
-def download_video(url, root_dir=".", audio=False):
-    if not validate_twitch_url(url):
-        print(f"Warning: URL format check passed, but might not be standard Twitch VOD URL: {url}")
-
-    # Check for twitch-dl
-    if not shutil.which("twitch-dl"):
-        print("Error: 'twitch-dl' command not found. Please install it (uv add twitch-dl).")
-        sys.exit(1)
-
+def download_video(url, root_dir=".", audio=True):
     print(f"Processing Twitch URL: {url}")
     
-    # 1. Fetch Metadata
-    info = get_twitch_info(url)
-    if not info:
-        print("Failed to retrieve video info.")
+    # 1. Fetch Metadata via yt-dlp
+    ydl_opts_meta = {
+        'quiet': True,
+        'no_warnings': True,
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as e:
+        print(f"Error fetching metadata: {e}")
         sys.exit(1)
 
-    # Use custom title, streamer uses same title for their VODs
-    creator = info.get('creator') or {}
-    title = f'Twitch_VOD_{creator.get('displayName')}_{info.get('createdAt')}'
-    description = info.get("description") # Can be None
-    if description is None:
-         description = "No description available."
+    # Construct Title: Twitch_VOD_{creator}_{createdAt}
+    # yt-dlp timestamp is usually epoch, upload_date is YYYYMMDD
+    uploader = info.get('uploader', 'Unknown')
+    upload_date = info.get('upload_date', '00000000') # YYYYMMDD
+    timestamp = info.get('timestamp')
     
-    duration = info.get("lengthSeconds", 0)
+    # Try to format timestamp nicely if available to match previous createdAt style?
+    # twitch-dl createdAt: 2023-10-27T...
+    # Let's just use upload_date for simplicity and robustness or format timestamp
+    if timestamp:
+        dt = datetime.datetime.fromtimestamp(timestamp)
+        date_str = dt.strftime("%Y-%m-%dT%H_%M_%S")
+    else:
+        date_str = upload_date
+
+    title = f'Twitch_VOD_{uploader}_{date_str}'
+    original_title = info.get('title', '')
+    description = info.get("description", "No description available.")
+    duration = info.get("duration", 0)
 
     print(f"Found Title: {title}")
+    # print(f"Original Stream Title: {original_title}")
     print(f"Duration: {duration}s")
     
     safe_title = clean_filename(title)
@@ -80,49 +67,70 @@ def download_video(url, root_dir=".", audio=False):
     else:
         print(f"Using existing directory: {output_dir}")
 
-    # 2. Download via twitch-dl
-    # twitch-dl download <url> -q source -o <file> --overwrite
+    # 2. Download via yt-dlp
     output_template = os.path.join(output_dir, "original.mp4")
     audio_template = os.path.join(output_dir, "audio.mp4")
     srt_output = os.path.join(output_dir, "transcript.srt")
 
-    print(f"Downloading video '{title}' via twitch-dl...")
-    
-    cmd = [
-        "twitch-dl", "download", url,
-        "--quality", "source",
-        "--output", output_template,
-        "--overwrite"
-    ]
+    # 2.1 Video Download (480p)
+    print(f"Downloading video '{title}' (480p) via yt-dlp...")
+    ydl_opts_video = {
+        'format': 'bestvideo[height<=480]+bestaudio/best[height<=480]',
+        'outtmpl': output_template,
+        'merge_output_format': 'mp4',
+        'concurrent_fragment_downloads': 10,
+    }
     
     try:
-        # Stream stdout to user so they see progress bar
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"twitch-dl download failed: {e}")
+        with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
+            ydl.download([url])
+    except Exception as e:
+        print(f"Video download failed: {e}")
         sys.exit(1)
 
     if not os.path.exists(output_template):
-        print("Error: Download finished but output file missing.")
+        print("Error: Video download finished but output file missing.")
         sys.exit(1)
 
-    # 2.5 Audio Download (if requested)
+    # 2.2 Audio Download (Direct Audio_Only)
     if audio:
-        print(f"Downloading Audio Only '{title}'...")
-        
-        cmd_audio = [
-            "twitch-dl", "download", url,
-            "--quality", "audio_only",
-            "--output", audio_template,
-            "--overwrite"
-        ]
+        print(f"Downloading audio '{title}' (Audio Only) via yt-dlp...")
+        ydl_opts_audio = {
+            'format': 'bestaudio/best',
+            'outtmpl': audio_template,
+            'concurrent_fragment_downloads': 10,
+            # Ensure we get an m4a/mp4 audio file
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp4',
+            }],
+        }
         
         try:
-            subprocess.run(cmd_audio, check=True)
-            print(f"Audio saved to: {audio_template}")
-        except subprocess.CalledProcessError as e:
+            with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
+                ydl.download([url])
+            # yt-dlp with aac postprocessor might append .aac or .m4a. 
+            # We forced outtmpl to audio.mp4, but postprocessor might change extension.
+            # Let's check.
+            # Actually, standard behavior: if outtmpl ends in .mp4, it might keep it.
+            # But let's verify if file exists or if it has another extension.
+            base_audio, _ = os.path.splitext(audio_template)
+            found_audio = False
+            for ext in ['.mp4', '.m4a', '.aac']:
+                if os.path.exists(base_audio + ext):
+                    if base_audio + ext != audio_template:
+                        shutil.move(base_audio + ext, audio_template)
+                    found_audio = True
+                    break
+            
+            if not found_audio:
+                 print(f"Warning: Audio file not found at expected path: {audio_template}")
+            else:
+                 print(f"Audio saved to: {audio_template}")
+
+        except Exception as e:
             print(f"Audio download failed: {e}")
-            # We don't exit here, as video might be successful
+
 
     # 3. Create Metadata File
     metadata_path = os.path.join(output_dir, "metadata.md")
@@ -132,12 +140,13 @@ def download_video(url, root_dir=".", audio=False):
         f.write("```\n")
         f.write(f"Source: {url}\n")
         f.write(f"Title: {title}\n")
+        f.write(f"Original Title: {original_title}\n")
         f.write(f"Description: {description}\n")
         f.write("```\n")
 
     print(f"Output saved in: {output_dir}")
 
-    # 4. Auto-Transcribe, always do for twitter
+    # 4. Auto-Transcribe, always do for twitch/twitter flow
     print("Starting transcription...")
     try:
         transcript.transcribe_video(
@@ -158,10 +167,10 @@ def download_video(url, root_dir=".", audio=False):
     print("\nDone!")
 
 def main():
-    parser = argparse.ArgumentParser(description="Twitch Downloader (twitch-dl)")
+    parser = argparse.ArgumentParser(description="Twitch Downloader (via yt-dlp)")
     parser.add_argument("url", help="Twitch VOD URL")
     parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
-    parser.add_argument("--audio", action='store_true', default=True, help="Also download audio track as audio.mp4")
+    parser.add_argument("--audio", action='store_true', default=True, help="Extract audio (default: True)")
     args = parser.parse_args()
 
     download_video(args.url, root_dir=args.root_dir, audio=args.audio)
