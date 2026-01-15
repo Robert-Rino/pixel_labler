@@ -11,3 +11,10 @@ wheels/
 
 # Environment variables
 .env
+
+# Google Cloud
+sa.json
+
+# Local files
+*.txt
+*.log
