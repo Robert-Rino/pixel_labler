@@ -208,19 +208,20 @@ def process(root_dir, crop_cam, crop_screen):
                     transcribe_video(
                         input_file=path_audio,
                         output_file=os.path.join(output_folder, "transcript.srt"),
+                        speaker_labels=True,
                     )
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")
 
-                # Translate transcript.srt to zh.srt
-                print("正在翻譯字幕...")
-                try:
-                    translate_srt_zh(
-                        os.path.join(output_folder, "transcript.srt"),
-                        os.path.join(output_folder, "zh.srt")
-                    )
-                except Exception as e:
-                    print(f"字幕翻譯失敗: {e}")
+                # # Translate transcript.srt to zh.srt
+                # print("正在翻譯字幕...")
+                # try:
+                #     translate_srt_zh(
+                #         os.path.join(output_folder, "transcript.srt"),
+                #         os.path.join(output_folder, "zh.srt")
+                #     )
+                # except Exception as e:
+                #     print(f"字幕翻譯失敗: {e}")
         else:
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
