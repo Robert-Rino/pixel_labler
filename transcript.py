@@ -230,7 +230,7 @@ def transcribe_video(
     model_size: str = "medium",
     device: str = "auto",
     compute_type: str = "int8",
-    engine: str = "assemblyai"
+    engine: str = "assemblyai",
     speaker_labels: bool = False,
 ):
     """
