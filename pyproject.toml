@@ -9,6 +9,7 @@ dependencies = [
     "assemblyai>=0.48.4",
     "deep-translator>=1.11.4",
     "faster-whisper>=1.2.1",
+    "flask>=3.1.2",
     "google-genai>=1.56.0",
     "ipython>=9.8.0",
     "mlx-whisper>=0.4.3",
