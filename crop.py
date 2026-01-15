@@ -14,6 +14,7 @@ DEFAULT_CROP_SCREEN = "1280:720:0:0"
 # ===========================================
 WATERMARK_TEXT = "@StreamFlash"
 WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=36:x=(w-tw)/2:y=(h-th)/2"
+STACKED_WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=40:x=(w-tw)/2:y=(h-th)/3"
 def clean_filename(text):
     """移除資料夾名稱中不合法的字元以及 Hashtags"""
     # Remove #hashtags
@@ -158,14 +159,14 @@ def process(root_dir, crop_cam, crop_screen):
                 '-movflags', '+faststart',
                 "-filter_complex", 
                 # 1. Crop & Scale & Split
-                f"[0:v]crop={crop_cam},scale=1080:960,split=2[cam_base][cam_stack]; "
-                f"[0:v]crop={crop_screen},scale=1080:960,split=2[screen_base][screen_stack]; "
+                f"[0:v]crop={crop_cam},scale=1080:640,split=2[cam_base][cam_stack]; "
+                f"[0:v]crop={crop_screen},scale=1080:1280,split=2[screen_base][screen_stack]; "
                 
                 # 2. Stack
                 f"[cam_stack][screen_stack]vstack=inputs=2[stacked_base]; "
                 
                 # 3. Apply Watermark
-                f"[stacked_base]{WATERMARK_FILTER}[stacked_out]; "
+                f"[stacked_base]{STACKED_WATERMARK_FILTER}[stacked_out]; "
                 f"[cam_base]{WATERMARK_FILTER}[cam_out]; "
                 f"[screen_base]{WATERMARK_FILTER}[screen_out]; "
                 f"[0:v]{WATERMARK_FILTER}[raw_out]",
