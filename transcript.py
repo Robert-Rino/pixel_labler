@@ -8,7 +8,7 @@ from datetime import timedelta
 from faster_whisper import WhisperModel
 import assemblyai as aai
 import srt
-from deep_translator import GoogleTranslator
+from googlecloud import GoogleTranslator
 
 def str_to_bool(value):
     if isinstance(value, bool):
