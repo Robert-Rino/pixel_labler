@@ -254,8 +254,7 @@ def transcribe_video(
             
         aai.settings.api_key = api_key
         transcriber = aai.Transcriber()
-        config = aai.TranscriptionConfig(
-            # speaker_labels=True,
+        config = dict(
             format_text=True,
             punctuate=True,
             language_detection=True,
@@ -263,8 +262,8 @@ def transcribe_video(
         )
 
         if speaker_labels:
-            config.speaker_labels = True
-            config.speech_understanding={
+            config["speaker_labels"] = True
+            config["speech_understanding"]={
                 "request": {
                     "translation": {
                         "target_languages": ["zh"],
@@ -273,9 +272,11 @@ def transcribe_video(
                     }
                 }
             }
+
+        transcribe_config = aai.TranscriptionConfig(**config)
         
         print(f"Starting Analysis & Transcription (AssemblyAI)...")
-        transcript = transcriber.transcribe(input_file, config=config)
+        transcript = transcriber.transcribe(input_file, config=transcribe_config)
         
         if transcript.status == aai.TranscriptStatus.error:
             print(f"AssemblyAI Error: {transcript.error}")
@@ -345,7 +346,7 @@ def transcribe_video(
                 converter = opencc.OpenCC('s2t.json')
                 fname_zh = os.path.join(transcript_dir, f"speaker_{speaker}_zh.srt")
                 with open(fname_zh, "w", encoding="utf-8") as f:
-                    f.write("\n".join(converter.convert(lines_zh)))
+                    f.write(converter.convert("\n".join(lines_zh)))
                 print("Wrote", fname_zh)
 
         
@@ -401,6 +402,7 @@ def main():
     parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
     parser.add_argument("--engine", default="assemblyai", choices=["assemblyai", "faster_whisper"], help="Transcription engine to use")
     parser.add_argument("--translation_engine", default="google", choices=["google", "ollama"], help="Translation engine to use (default: google)")
+    parser.add_argument("--speaker_labels", action="store_true", help="Enable speaker labels")
 
     args = parser.parse_args()
     input_file = os.path.abspath(args.input_file)
@@ -415,7 +417,8 @@ def main():
         transcribe_video(
             input_file=input_file,
             output_file=original_output,
-            engine=args.engine
+            engine=args.engine,
+            speaker_labels=args.speaker_labels,
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
