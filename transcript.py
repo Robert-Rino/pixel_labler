@@ -4,7 +4,9 @@ import argparse
 import time
 import requests
 import json
+import opencc
 from datetime import timedelta
+from collections import defaultdict
 from faster_whisper import WhisperModel
 import assemblyai as aai
 import srt
@@ -229,6 +231,7 @@ def transcribe_video(
     device: str = "auto",
     compute_type: str = "int8",
     engine: str = "assemblyai"
+    speaker_labels: bool = False,
 ):
     """
     Core function to transcribe and optionally translate a video file.
@@ -252,12 +255,24 @@ def transcribe_video(
         aai.settings.api_key = api_key
         transcriber = aai.Transcriber()
         config = aai.TranscriptionConfig(
-            speaker_labels=True,
+            # speaker_labels=True,
             format_text=True,
             punctuate=True,
             language_detection=True,
-            # dual_channel=True,
+            disfluencies=True,
         )
+
+        if speaker_labels:
+            config.speaker_labels = True
+            config.speech_understanding={
+                "request": {
+                    "translation": {
+                        "target_languages": ["zh"],
+                        "formal": False,
+                        "match_original_utterance": True
+                    }
+                }
+            }
         
         print(f"Starting Analysis & Transcription (AssemblyAI)...")
         transcript = transcriber.transcribe(input_file, config=config)
@@ -266,6 +281,7 @@ def transcribe_video(
             print(f"AssemblyAI Error: {transcript.error}")
             sys.exit(1)
         
+        # 1. Export Full SRT
         srt_result = transcript.export_subtitles_srt(
             # Optional: Customize the maximum number of characters per caption
             chars_per_caption=32
@@ -274,6 +290,64 @@ def transcribe_video(
         print(f"Writing original transcript to: {output_file}")
         with open(output_file, "w", encoding="utf-8") as f_orig:
           f_orig.write(srt_result)
+          
+        if not speaker_labels:
+          return
+        
+        # 2. Export per-speaker SRTs
+        # Group utterances by speaker
+        by_speaker = defaultdict(list)
+        
+        def ms_to_srt_time(ms: int) -> str:
+            h = ms // 3600000
+            m = (ms % 3600000) // 60000
+            s = (ms % 60000) // 1000
+            ms_rem = ms % 1000
+            return f"{h:02}:{m:02}:{s:02},{ms_rem:03}"
+
+        for i, u in enumerate(transcript.utterances, start=1):
+            by_speaker[u.speaker].append(u)
+
+        # Write one SRT file per speaker
+        base_dir = os.path.dirname(output_file)
+        transcript_dir = os.path.join(base_dir, "transcript")
+        if not os.path.exists(transcript_dir):
+            os.makedirs(transcript_dir)
+            
+        print(f"Processing {len(by_speaker)} speakers...")
+            
+        for speaker, uts in by_speaker.items():
+            lines = []
+            lines_zh = []
+            for i, u in enumerate(uts, start=1):
+                # Original
+                lines.append(str(i))
+                lines.append(f"{ms_to_srt_time(u.start)} --> {ms_to_srt_time(u.end)}")
+                lines.append(u.text)
+                lines.append("") # Blank line
+                
+                # Translated
+                zh_text = getattr(u, "translated_texts", {}).get("zh")
+                if zh_text:
+                    lines_zh.append(str(i))
+                    lines_zh.append(f"{ms_to_srt_time(u.start)} --> {ms_to_srt_time(u.end)}")
+                    lines_zh.append(zh_text)
+                    lines_zh.append("") 
+            
+            # Write Original
+            fname = os.path.join(transcript_dir, f"speaker_{speaker}.srt")
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+            print("Wrote", fname)
+            
+            # Write Translated (Convert to Traditional Chinese)
+            if lines_zh:
+                converter = opencc.OpenCC('s2t.json')
+                fname_zh = os.path.join(transcript_dir, f"speaker_{speaker}_zh.srt")
+                with open(fname_zh, "w", encoding="utf-8") as f:
+                    f.write("\n".join(converter.convert(lines_zh)))
+                print("Wrote", fname_zh)
+
         
     else:
         # Default: faster_whisper
