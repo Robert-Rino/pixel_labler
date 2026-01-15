@@ -79,6 +79,18 @@ def download_video(url, root_dir=".", audio=True):
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
         'concurrent_fragment_downloads': 10,
+        # 3. 偵測限速並重連 (對應 --throttled-rate 100K)
+        # 注意：這裡的數值是 bytes/sec，100K 應寫為 102400
+        'throttled_rate': 102400,
+        # 4. 外部下載器設定 (如果你有安裝 aria2c)
+        'external_downloader': 'aria2c',
+        'external_downloader_args': {
+            'aria2c': ['-x', '16', '-s', '16', '-k', '1M'],
+        },
+        # 5. 容錯設定
+        'retries': 10,
+        'fragment_retries': 10,
+        'file_access_retries': 5,
     }
     
     try:
