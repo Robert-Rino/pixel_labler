@@ -50,6 +50,8 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
 
     root_dir = os.path.abspath(root_dir)
     output_dir = os.path.join(root_dir, safe_title)
+
+    transcript_output = os.path.join(output_dir, "transcript.srt")
     
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -123,8 +125,10 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
         try:
             transcribe_video(
                 input_file=output_template,
-                zh_output="zh.srt",
-                split_by_hour=split_by_hour,
+                output_file=transcript_output,
+                # zh_output="zh.srt",
+                # split_by_hour=split_by_hour,
+                speaker_labels=True,
                 
             )
         except Exception as e:
