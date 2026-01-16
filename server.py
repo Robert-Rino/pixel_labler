@@ -4,6 +4,7 @@ import os
 import sys
 
 import monitor
+import crop
 
 N8N_DATA_DIR = "/Users/nino/Repository/n8n/data"
 
@@ -26,30 +27,12 @@ def trigger_crop():
         target_dir = os.path.join(N8N_DATA_DIR, folder)
         if not os.path.exists(target_dir):
             return jsonify({"status": "error", "message": f"Target directory {target_dir} does not exist"}), 400
-
-        # Construct command
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        crop_script = os.path.join(script_dir, "crop.py")
         
-        # Crop 只接受資料夾名稱
-        cmd = ["uv", "run", crop_script, folder]
-        
-        # Add optional crop params if provided
-        if data.get('cam_crop'):
-            cmd.extend(["--cam", data.get('cam_crop', DEFAULT_CAM)])
-        if data.get('screen_crop'):
-            cmd.extend(["--screen", data.get('screen_crop', DEFAULT_SCREEN)])
-
-        print(f"Triggering crop: {' '.join(cmd)}")
-        
-        # Run in background
-        with open("crop.log", "w") as f:    
-            subprocess.Popen(
-                cmd,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                start_new_session=True
-            )
+        crop.process(
+            target_dir,
+            data.get('cam_crop', DEFAULT_CAM),
+            data.get('screen_crop', DEFAULT_SCREEN)
+        )
         
         return jsonify({
             "status": "success", 
