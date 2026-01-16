@@ -106,42 +106,57 @@ def download_video(url, root_dir=".", audio=True):
 
     # 2.2 Audio Download (Direct Audio_Only)
     if audio:
-        print(f"Downloading audio '{title}' (Audio Only) via yt-dlp...")
-        ydl_opts_audio = {
-            'format': 'bestaudio/best',
-            'outtmpl': audio_template,
-            'concurrent_fragment_downloads': 10,
-            # Ensure we get an m4a/mp4 audio file
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp4',
-            }],
-        }
-        
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
-                ydl.download([url])
-            # yt-dlp with aac postprocessor might append .aac or .m4a. 
-            # We forced outtmpl to audio.mp4, but postprocessor might change extension.
-            # Let's check.
-            # Actually, standard behavior: if outtmpl ends in .mp4, it might keep it.
-            # But let's verify if file exists or if it has another extension.
-            base_audio, _ = os.path.splitext(audio_template)
-            found_audio = False
-            for ext in ['.mp4', '.m4a', '.aac']:
-                if os.path.exists(base_audio + ext):
-                    if base_audio + ext != audio_template:
-                        shutil.move(base_audio + ext, audio_template)
-                    found_audio = True
-                    break
+        # Extract Audio from Video using ffmpeg
+        ffmpeg_cmd = [
+                "ffmpeg", "-y", "-i", output_template,
+                '-vn', 
+                '-acodec', 'copy',
+                audio_template,
+            ]
             
-            if not found_audio:
-                 print(f"Warning: Audio file not found at expected path: {audio_template}")
-            else:
-                 print(f"Audio saved to: {audio_template}")
+        print(f"Extracting audio from: {output_template}...")
+        # 使用 subprocess.run 執行並隱藏過多輸出，只顯示錯誤
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"FFmpeg 錯誤:\\n{result.stderr}")
+            return
 
-        except Exception as e:
-            print(f"Audio download failed: {e}")
+        # print(f"Downloading audio '{title}' (Audio Only) via yt-dlp...")
+        # ydl_opts_audio = {
+        #     'format': 'bestaudio/best',
+        #     'outtmpl': audio_template,
+        #     'concurrent_fragment_downloads': 10,
+        #     # Ensure we get an m4a/mp4 audio file
+        #     'postprocessors': [{
+        #         'key': 'FFmpegExtractAudio',
+        #         'preferredcodec': 'mp4',
+        #     }],
+        # }
+        
+        # try:
+        #     with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
+        #         ydl.download([url])
+        #     # yt-dlp with aac postprocessor might append .aac or .m4a. 
+        #     # We forced outtmpl to audio.mp4, but postprocessor might change extension.
+        #     # Let's check.
+        #     # Actually, standard behavior: if outtmpl ends in .mp4, it might keep it.
+        #     # But let's verify if file exists or if it has another extension.
+        #     base_audio, _ = os.path.splitext(audio_template)
+        #     found_audio = False
+        #     for ext in ['.mp4', '.m4a', '.aac']:
+        #         if os.path.exists(base_audio + ext):
+        #             if base_audio + ext != audio_template:
+        #                 shutil.move(base_audio + ext, audio_template)
+        #             found_audio = True
+        #             break
+            
+        #     if not found_audio:
+        #          print(f"Warning: Audio file not found at expected path: {audio_template}")
+        #     else:
+        #          print(f"Audio saved to: {audio_template}")
+
+        # except Exception as e:
+        #     print(f"Audio download failed: {e}")
 
 
     # 3. Create Metadata File
