@@ -68,29 +68,35 @@ def download_video(url, root_dir=".", audio=True):
         print(f"Using existing directory: {output_dir}")
 
     # 2. Download via yt-dlp
-    output_template = os.path.join(output_dir, "original.mp4")
-    audio_template = os.path.join(output_dir, "audio.mp4")
+    output_original = os.path.join(output_dir, "original.ts")
+    output_audio = os.path.join(output_dir, "audio.mp4")
     srt_output = os.path.join(output_dir, "transcript.srt")
 
     # 2.1 Video Download (480p)
     print(f"Downloading video '{title}' (480p) via yt-dlp...")
     ydl_opts_video = {
+        # # 1. Authentication (Identity)
+        # 'cookiefile': 'cookies.txt',  # --cookies cookies.txt
+
+        # 2. Format Selection (Resolution limit)
         'format': 'bestvideo[height<=480]+bestaudio/best[height<=480]',
-        'outtmpl': output_template,
-        'merge_output_format': 'mp4',
-        'concurrent_fragment_downloads': 10,
-        # 3. 偵測限速並重連 (對應 --throttled-rate 100K)
-        # 注意：這裡的數值是 bytes/sec，100K 應寫為 102400
-        'throttled_rate': 102400,
-        # 4. 外部下載器設定 (如果你有安裝 aria2c)
-        'external_downloader': 'aria2c',
-        'external_downloader_args': {
-            'aria2c': ['-x', '16', '-s', '16', '-k', '1M'],
+
+        # 3. Output Filename Template
+        'outtmpl': output_original,
+
+        # 4. Speed & Downloader Settings
+        'concurrent_fragment_downloads': 16,  # --concurrent-fragments 16
+        
+        # This is the Python equivalent of --downloader "m3u8:native"
+        # It forces the native downloader for HLS lists to ensure multi-threading works
+        'external_downloader': {
+            'm3u8': 'native' 
         },
-        # 5. 容錯設定
+
+        # 5. Optional: Error Handling
         'retries': 10,
         'fragment_retries': 10,
-        'file_access_retries': 5,
+        'ignoreerrors': True, # Skip if something breaks slightly
     }
     
     try:
@@ -100,7 +106,7 @@ def download_video(url, root_dir=".", audio=True):
         print(f"Video download failed: {e}")
         sys.exit(1)
 
-    if not os.path.exists(output_template):
+    if not os.path.exists(output_original):
         print("Error: Video download finished but output file missing.")
         sys.exit(1)
 
@@ -108,56 +114,18 @@ def download_video(url, root_dir=".", audio=True):
     if audio:
         # Extract Audio from Video using ffmpeg
         ffmpeg_cmd = [
-                "ffmpeg", "-y", "-i", output_template,
+                "ffmpeg", "-y", "-i", output_original,
                 '-vn', 
                 '-acodec', 'copy',
-                audio_template,
+                output_audio,
             ]
             
-        print(f"Extracting audio from: {output_template}...")
+        print(f"Extracting audio from: {output_original}...")
         # 使用 subprocess.run 執行並隱藏過多輸出，只顯示錯誤
         result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(f"FFmpeg 錯誤:\\n{result.stderr}")
             return
-
-        # print(f"Downloading audio '{title}' (Audio Only) via yt-dlp...")
-        # ydl_opts_audio = {
-        #     'format': 'bestaudio/best',
-        #     'outtmpl': audio_template,
-        #     'concurrent_fragment_downloads': 10,
-        #     # Ensure we get an m4a/mp4 audio file
-        #     'postprocessors': [{
-        #         'key': 'FFmpegExtractAudio',
-        #         'preferredcodec': 'mp4',
-        #     }],
-        # }
-        
-        # try:
-        #     with yt_dlp.YoutubeDL(ydl_opts_audio) as ydl:
-        #         ydl.download([url])
-        #     # yt-dlp with aac postprocessor might append .aac or .m4a. 
-        #     # We forced outtmpl to audio.mp4, but postprocessor might change extension.
-        #     # Let's check.
-        #     # Actually, standard behavior: if outtmpl ends in .mp4, it might keep it.
-        #     # But let's verify if file exists or if it has another extension.
-        #     base_audio, _ = os.path.splitext(audio_template)
-        #     found_audio = False
-        #     for ext in ['.mp4', '.m4a', '.aac']:
-        #         if os.path.exists(base_audio + ext):
-        #             if base_audio + ext != audio_template:
-        #                 shutil.move(base_audio + ext, audio_template)
-        #             found_audio = True
-        #             break
-            
-        #     if not found_audio:
-        #          print(f"Warning: Audio file not found at expected path: {audio_template}")
-        #     else:
-        #          print(f"Audio saved to: {audio_template}")
-
-        # except Exception as e:
-        #     print(f"Audio download failed: {e}")
-
 
     # 3. Create Metadata File
     metadata_path = os.path.join(output_dir, "metadata.md")
@@ -177,7 +145,7 @@ def download_video(url, root_dir=".", audio=True):
     print("Starting transcription...")
     try:
         transcript.transcribe_video(
-            input_file=audio_template,
+            input_file=output_audio,
             output_file=srt_output,
         )
     except Exception as e:
