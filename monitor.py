@@ -3,9 +3,57 @@ import sys
 import argparse
 import subprocess
 import datetime
+import requests
 import yt_dlp
 
 DOWNLOAD_DIR = "~/Repository/n8n/data"
+
+def is_vod_ready(url):
+    """
+    Check if the VOD is fully processed (ready for download) by inspecting the m3u8 manifest.
+    Prevents downloading 'ghost' VODs (incomplete/live segments).
+    """
+    print(f"Checking VOD status for: {url}")
+    
+    # 1. Get m3u8 URL using yt-dlp
+    ydl_opts = {
+        'quiet': True,
+        'format': 'bestvideo[height<=480]+bestaudio/best[height<=480]', # Just need a stream url
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # force_generic_extractor=False is default
+            # We want to get the direct stream URL
+            info = ydl.extract_info(url, download=False)
+            m3u8_url = info.get('url')
+            
+            if not m3u8_url:
+                print("[!] Could not retrieve stream URL.")
+                return False
+    except Exception as e:
+        print(f"[!] Error getting stream URL: {e}")
+        return False
+
+    # 2. Download the Manifest text
+    print(f"Downloading manifest from: {m3u8_url}")
+    try:
+        r = requests.get(m3u8_url)
+        r.raise_for_status()
+        manifest_content = r.text
+    except Exception as e:
+        print(f"[!] Network error checking manifest: {e}")
+        return False
+
+    # 3. Analyze the Tags
+    is_finalized = "#EXT-X-ENDLIST" in manifest_content
+    
+    if is_finalized:
+        print("[+] VOD is ready (ENDLIST tag found).")
+        return True
+    else:
+        print("[-] VOD is NOT ready (No ENDLIST tag). Skipping.")
+        return False
 
 def get_latest_vod(channel_url):
     """
@@ -101,7 +149,13 @@ def get_new_video(channel_url=DEFAULT_CHANNEL_URL, memory_file=DEFAULT_MEMORY_FI
     
     # 3. Compare
     if latest_ts > last_ts:
-        print(f"[{datetime.datetime.now()}] New VOD detected: {latest_title}")
+        print(f"[{datetime.datetime.now()}] New VOD candidate: {latest_title}")
+        
+        # Check if ghost VOD
+        if not is_vod_ready(latest_url):
+             return None
+             
+        print(f"New VOD confirmed: {latest_title}")
         
         if update_memory:
             # 4. Update Memory
