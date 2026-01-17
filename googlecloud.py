@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import re
 from google.cloud import translate_v2 as translate
 
 import srt
@@ -18,6 +19,20 @@ class GoogleTranslator:
         except Exception as e:
             print(f"Failed to initialize Google Translate Client: {e}", file=sys.stderr)
             self.client = None
+
+    @classmethod
+    def remove_mandarin_punctuation(cls, text: str) -> str:
+        """
+        Removes Chinese/CJK punctuation and standard ASCII punctuation.
+        """
+        # 1. \u3000-\u303f : CJK Symbols and Punctuation (e.g., 、 。 〉)
+        # 2. \uff00-\uffef : Full-width ASCII variants (e.g., ， ？ ！ ：)
+        # 3. Standard ASCII punctuation (optional, added for safety)
+        
+        # Define the regex pattern for all punctuation
+        punctuation_pattern = r"[\u3000-\u303f\uff00-\uffef!\"#$%&'()*+,-./:;<=>?@[\]^_`{|}~]+"
+        
+        return re.sub(punctuation_pattern, "", text)
 
     def translate(self, text: str, target: str = None) -> str:
         """
@@ -136,7 +151,7 @@ class GoogleTranslator:
 
                 else:
                     # Clean up
-                    translated_texts.extend([m.strip() for m in matches])
+                    translated_texts.extend([self.remove_mandarin_punctuation(m).strip() for m in matches])
                     
                 print(f"Translated chunk {i+1}/{len(chunks)}...", end='\r')
                 
