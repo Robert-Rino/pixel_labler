@@ -51,54 +51,41 @@ class GoogleTranslator:
     def translate_file(self, input_file: str, output_file: str = 'zh.srt'):
         """
         Translate an SRT file with context awareness (joining lines).
+        Uses <s> tags to separate lines.
         """
-        # If output_file is provided (or default) but has no directory component,
-        # save it in the same directory as the input file.
         output_file = os.path.join(os.path.dirname(input_file), output_file)
             
         print(f"Translating {input_file} -> {output_file} ({self.target})...")
         
         with open(input_file, 'r', encoding='utf-8') as f:
             content = f.read()
-            trans_result = self.translate(content)
             
         try:
             subs = list(srt.parse(content))
         except srt.SRTParseError as e:
             print(f"Error parsing SRT file: {e}", file=sys.stderr)
             return
-        # Context-Aware Translation:
-        # Join all keys into a single text (or large blocks).
-        # We use a special delimiter or just newlines? Newlines are safer for NMT.
-        # However, Google Translate might merge lines.
-        # Safe strategy: Chunk by ~2000-5000 chars to avoid timeout/limits but provide context.
-        # Use <br> or just \n. \n is standard for text/plain.
+
+        texts = [sub.content.replace('\n', ' ') for sub in subs] 
         
-        texts = [sub.content.replace('\n', ' ') for sub in subs] # Handle multiline subs? Flatten them first.
-        # Actually subtitle lines can be multiline. But usually better to treating entire subtitle as one sentence?
-        # Let's keep original newlines? or Replace them?
-        # Ideally: sub 1 context \n sub 2 context.
-        
-        # We will iterate and build chunks.
+        # Build chunks based on character limit
         chunks = []
         current_chunk = []
         current_len = 0
-        MAX_CHARS = 4500 # Safety margin under 5000? v2 limit? v2 POST limit ~100k?
-        # Let's try 4000 chars.
+        MAX_CHARS = 4500 # Safety margin
         
         for t in texts:
-            # Flatten internal newlines of a single subtitle to avoid confusing the splitter?
-            # Or keep them? If we keep them, splitting back by \n is hard if we don't know how many lines.
-            # Compromise: Replace internal newlines with space for context translation?
-            # Usually subtitles are short.
-            t_flat = t.replace('\n', ' ')
-            if current_len + len(t_flat) + 1 > MAX_CHARS:
+            # Estimate length with tags "<s>" + t + "</s>"
+            # Tag length: 3 + 4 = 7
+            item_len = len(t) + 7 
+            
+            if current_len + item_len > MAX_CHARS:
                  chunks.append(current_chunk)
                  current_chunk = []
                  current_len = 0
             
-            current_chunk.append(t_flat)
-            current_len += len(t_flat) + 1
+            current_chunk.append(t)
+            current_len += item_len
             
         if current_chunk:
             chunks.append(current_chunk)
@@ -107,33 +94,32 @@ class GoogleTranslator:
         
         print(f"Processing {len(texts)} lines in {len(chunks)} context blocks...")
         
+        import re
+
         for i, chunk in enumerate(chunks):
-            # Join with newline
-            joined_text = "\n".join(chunk)
+            # Wrap each line with <s>...</s>
+            tagged_chunk = ["<s>" + t + "</s>" for t in chunk]
+            joined_text = "".join(tagged_chunk)
             
             try:
-                # Translate as one big text
-                # We expect result to have same number of lines
+                # Translate
                 trans_result = self.translate(joined_text)
                 
-                # Split back
-                splitted = trans_result.split('\n')
+                # Parse results: Extract content between <s> and </s>
+                # Note: Google Translate might mess up tags slightly, e.g. <S> or </ s> or adding spaces.
+                # Regex needs to be robust.
+                # Common variations: <s>, < s>, < S>, </s>, < /s>, etc.
+                matches = re.findall(r'<s>(.*?)</s>', trans_result, re.IGNORECASE | re.DOTALL)
                 
-                # Verify alignment
-                if len(splitted) != len(chunk):
-                    print(f"Warning: Chunk {i} alignment mismatch! Input: {len(chunk)}, Output: {len(splitted)}")
-                    # Try to heal? 
-                    # If output has fewer lines, maybe merged?
-                    # If more, maybe split?
-                    # Fallback: If mismatch, translate individually for this chunk (losing context but safe)
-                    print("Fallback to line-by-line for this chunk due to mismatch.")
+                # Fallback check
+                if len(matches) != len(chunk):
+                    print(f"Warning: Chunk {i} alignment mismatch! Input: {len(chunk)}, Output: {len(matches)}")
+                    # Fallback to individual translation for this chunk
+                    print("Fallback to individual translation for this chunk...")
+                    
                     fallback_res = []
-                    # Doing naive line-by-line fallback
-                    # This is slow but safe.
-                    # Batch request for fallback
                     if len(chunk) > 0:
                         try:
-                           # Use client.translate list support
                            batch_res = self.client.translate(
                                 chunk,
                                 target_language=self.target,
@@ -147,9 +133,10 @@ class GoogleTranslator:
                             fallback_res = [""] * len(chunk)
                     
                     translated_texts.extend(fallback_res)
+
                 else:
                     # Clean up
-                    translated_texts.extend([s.strip() for s in splitted])
+                    translated_texts.extend([m.strip() for m in matches])
                     
                 print(f"Translated chunk {i+1}/{len(chunks)}...", end='\r')
                 
@@ -159,12 +146,9 @@ class GoogleTranslator:
         
         print(f"\nTranslation done. Writing to {output_file}")
         
-        # Reassemble
-        # Handle length mismatch if total differs? (Should happen only if logic bug)
         if len(translated_texts) != len(subs):
              print(f"CRITICAL ERROR: Total output lines {len(translated_texts)} != input {len(subs)}")
-             # Should not happen due to fallback logic above ensuring len match per chunk
-        
+
         for sub, trans in zip(subs, translated_texts):
             sub.content = trans
             
