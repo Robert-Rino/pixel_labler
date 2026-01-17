@@ -12,6 +12,90 @@ import assemblyai as aai
 import srt
 from googlecloud import GoogleTranslator
 
+def ms_to_srt_time(ms):
+    """Converts milliseconds to SRT timestamp format HH:MM:SS,mmm"""
+    seconds = ms / 1000
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+
+def generate_semantic_captions(words):
+    """
+    words: List of dicts e.g., [{'text': 'Hello', 'start': 100, 'end': 500}, ...]
+    """
+    
+    # --- CONFIGURATION ---
+    MAX_CHARS = 42           # Max characters per line (Netflix standard is 42)
+    MAX_DURATION = 3000      # Max duration of a subtitle line in ms (3 seconds)
+    GAP_THRESHOLD = 500      # If silence between words > 500ms, force break
+    # ---------------------
+
+    captions = []
+    current_line = []
+    
+    for i, word in enumerate(words):
+        # Clean the text to ensure we catch punctuation
+        text = word['text'].strip()
+        start = word['start']
+        end = word['end']
+        
+        # 1. Determine if we should start a new line
+        is_new_line = False
+        
+        if not current_line:
+            is_new_line = False # First word of the whole file
+        else:
+            prev_word = current_line[-1]
+            prev_text = prev_word['text'].strip()
+            
+            # RULE A: Time Gap (Silence)
+            # If gap between prev end and current start is large
+            time_gap = start - prev_word['end']
+            if time_gap > GAP_THRESHOLD:
+                is_new_line = True
+            
+            # RULE B: Punctuation
+            # If previous word ended a sentence
+            elif prev_text.endswith(('.', '?', '!')):
+                is_new_line = True
+            
+            # RULE C: Length Constraints
+            # Calculate current length if we added this word
+            current_char_count = sum(len(w['text']) + 1 for w in current_line)
+            
+            if current_char_count + len(text) > MAX_CHARS:
+                is_new_line = True
+            elif (end - current_line[0]['start']) > MAX_DURATION:
+                is_new_line = True
+
+        # 2. Add to current line or flush and start new
+        if is_new_line:
+            captions.append(current_line)
+            current_line = [word]
+        else:
+            current_line.append(word)
+            
+    # Append the last remaining line
+    if current_line:
+        captions.append(current_line)
+
+    # 3. Format into SRT
+    srt_output = ""
+    for index, group in enumerate(captions):
+        start_time = ms_to_srt_time(group[0]['start'])
+        end_time = ms_to_srt_time(group[-1]['end'])
+        
+        # Join words with spaces
+        text_content = " ".join([w['text'].strip() for w in group])
+        
+        srt_output += f"{index + 1}\n"
+        srt_output += f"{start_time} --> {end_time}\n"
+        srt_output += f"{text_content}\n\n"
+        
+    return srt_output
+
 def str_to_bool(value):
     if isinstance(value, bool):
         return value
@@ -283,11 +367,10 @@ def transcribe_video(
             print(f"AssemblyAI Error: {transcript.error}")
             sys.exit(1)
         
-        # 1. Export Full SRT
-        srt_result = transcript.export_subtitles_srt(
-            # Optional: Customize the maximum number of characters per caption
-            chars_per_caption=32
-        )
+        # 1. Export Full SRT (Semantic Captions)
+        print("Generating semantic captions...")
+        words_data = [{'text': w.text, 'start': w.start, 'end': w.end} for w in transcript.words]
+        srt_result = generate_semantic_captions(words_data)
 
         print(f"Writing original transcript to: {output_file}")
         with open(output_file, "w", encoding="utf-8") as f_orig:
