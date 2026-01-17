@@ -209,7 +209,8 @@ def process(root_dir, crop_cam, crop_screen):
                     transcribe_video(
                         input_file=path_audio,
                         output_file=os.path.join(output_folder, "transcript.srt"),
-                        speaker_labels=True,
+                        # speaker_labels=True,
+                        google_translate=True
                     )
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")

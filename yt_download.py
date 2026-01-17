@@ -126,9 +126,10 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
             transcribe_video(
                 input_file=output_template,
                 output_file=transcript_output,
+                google_translate=True,
                 # zh_output="zh.srt",
                 # split_by_hour=split_by_hour,
-                speaker_labels=True,
+                # speaker_labels=True,
                 
             )
         except Exception as e:
