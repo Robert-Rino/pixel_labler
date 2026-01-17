@@ -232,6 +232,7 @@ def transcribe_video(
     compute_type: str = "int8",
     engine: str = "assemblyai",
     speaker_labels: bool = False,
+    google_translate: bool = False,
 ):
     """
     Core function to transcribe and optionally translate a video file.
@@ -256,7 +257,7 @@ def transcribe_video(
         transcriber = aai.Transcriber()
         config = dict(
             format_text=True,
-            punctuate=True,
+            punctuate=False,
             language_detection=True,
             disfluencies=True,
         )
@@ -291,12 +292,15 @@ def transcribe_video(
         print(f"Writing original transcript to: {output_file}")
         with open(output_file, "w", encoding="utf-8") as f_orig:
           f_orig.write(srt_result)
-          
-        if not speaker_labels:
-          return
+
+        if google_translate:
+          GoogleTranslator().translate_file(output_file)
         
         # 2. Export per-speaker SRTs
         # Group utterances by speaker
+        if not speaker_labels:
+          return
+
         by_speaker = defaultdict(list)
         
         def ms_to_srt_time(ms: int) -> str:
