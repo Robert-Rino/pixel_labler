@@ -6,10 +6,10 @@ import sys
 import sys
 from transcript import transcribe_video, translate_srt_zh 
 # ================= 配置區域 =================
-INPUT_FILE_NAME = "original.mp4"
+INPUT_FILE_NAME = "original.ts"
 # defaults
-DEFAULT_CROP_CAM = "640:720:1280:0"
-DEFAULT_CROP_SCREEN = "1280:720:0:0"
+DEFAULT_CROP_CAM = "260:180:0:298"
+DEFAULT_CROP_SCREEN = "323:442:249:26"
 # ===========================================
 # ===========================================
 WATERMARK_TEXT = "@StreamFlash"
