@@ -1,22 +1,17 @@
 import os
 import sys
 import argparse
-import subprocess
+
 import datetime
 import requests
 import yt_dlp
 import json
-import time
+
+import twitch_download
 
 DOWNLOAD_DIR = "/Users/nino/Repository/n8n/data"
 DEFAULT_CHANNEL_URL = "https://www.twitch.tv/zackrawrr"
 DEFAULT_MEMORY_FILE = "memory.txt"
-
-def clean_filename(text):
-    """Remove invalid characters for folder names"""
-    import re
-    if not text: return "Untitled"
-    return re.sub(r'[\\/*?:"<>|]', "", text).strip()
 
 def is_vod_ready(url):
     """
@@ -65,23 +60,6 @@ def is_vod_ready(url):
         print("[-] VOD is NOT ready (No ENDLIST tag).")
         return False
 
-def get_m3u8_url(video_url, cookies_path):
-    """Uses yt-dlp (Python API) to handle authentication and extract the raw m3u8 URL."""
-    print(f"[*] Authenticating with yt-dlp using {cookies_path}...")
-    
-    ydl_opts = {
-        'cookiefile': cookies_path,
-        'format': 'best',
-        'quiet': True,
-    }
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=False)
-            return info.get('url')
-    except Exception as e:
-        print(f"[!] Error using yt-dlp Python API: {e}")
-        return None
 
 def parse_and_slice_manifest(manifest_url, start_min, duration_min):
     """Downloads manifest, parses segments, slices them, and returns new content or None if not ready."""
@@ -259,10 +237,10 @@ def load_memory(memory_path):
                 return data
             except json.JSONDecodeError:
                 # Fallback to old format (just float timestamp)
-                return {"last_ts": float(content), "vod_url": "", "downloaded_hours": 0}
+                return {"last_ts": float(content), "vod_url": "", "downloaded_chunks": 0, "total_chunks": 0}
     except Exception as e:
         print(f"Error loading memory: {e}")
-        return {"last_ts": 0.0, "vod_url": "", "downloaded_hours": 0}
+        return {"last_ts": 0.0, "vod_url": "", "downloaded_chunks": 0, "total_chunks": 0}
 
 def save_memory(memory_path, data):
     try:
@@ -271,9 +249,10 @@ def save_memory(memory_path, data):
     except Exception as e:
         print(f"Error saving memory: {e}")
 
-def get_new_video(channel_url=DEFAULT_CHANNEL_URL, memory_file=DEFAULT_MEMORY_FILE, update_memory=True):
+def get_new_video(channel_url=DEFAULT_CHANNEL_URL, memory_file=DEFAULT_MEMORY_FILE, update_memory=True, chunk_size=60):
     """
     Checks for a new VOD or new chunks of current VOD.
+    If update_memory is True, it enforces chunked downloading logic.
     """
     memory_path = os.path.abspath(memory_file)
     memory = load_memory(memory_path)
@@ -321,115 +300,103 @@ def get_new_video(channel_url=DEFAULT_CHANNEL_URL, memory_file=DEFAULT_MEMORY_FI
     #      - If Yes: Download Next Hour.
     
     current_ts = memory.get("last_ts", 0.0)
-    downloaded_hours = memory.get("downloaded_hours", 0)
+    downloaded_chunks = memory.get("downloaded_chunks", 0)
     
-    action_type = None # "FULL", "CHUNK", "NONE"
-    target_hour_start = 0
+    action_type = None # "CHUNK", "NONE" (Full is deprecated for download mode)
+    target_chunk_index = 0
     
+    # 1. Start / Reset Logic
     if last_ts > current_ts:
         print(f"[{datetime.datetime.now()}] New VOD detected: {title}")
-        # Reset state for new VOD
-        downloaded_hours = 0 
+        downloaded_chunks = 0 
+        target_chunk_index = 0
+        action_type = "CHUNK"
+        
+    elif abs(last_ts - current_ts) < 600: # Same VOD
+        print(f"Checking updates for current VOD: {title} (Downloaded Chunks: {downloaded_chunks})")
+        target_chunk_index = downloaded_chunks
+        action_type = "CHUNK"
+    
+
+    # 2. Execution Logic
+    if action_type == "CHUNK":
+        video_duration = vod_info.get('duration')
+        
+        total_chunks = 0
+        if video_duration:
+            import math
+            total_chunks = math.ceil(video_duration / 60 / chunk_size)
+        else:
+            # If live, duration might be None or growing. 
+            # We can treat total_chunks as infinite or unknown.
+            total_chunks = 999999
+            
+        print(f"VOD Duration: {video_duration}s -> Total Chunks: {total_chunks}")
+        
+        # Check against Memory
+        # If we have already downloaded >= total_chunks, stop.
+        # BUT for LIVE videos, total_chunks keeps increasing (or is unknown).
+        # So invalid check for live. 
+        # Only valid if VOD is finalized (ENDLIST).
         
         if is_vod_ready(latest_url):
-            print("VOD is fully ready.")
-            action_type = "FULL"
-        else:
-            print("VOD is live/incomplete. Checking for Hour 1...")
-            action_type = "CHUNK"
-            target_hour_start = 0 # 0th hour (0-60 min) -> Hour 1
-
-    elif abs(last_ts - current_ts) < 600: # Same VOD (allow small jitter)
-        # Check for next chunk
-        print(f"Checking updates for current VOD: {title} (Downloaded: {downloaded_hours}h)")
-        if not is_vod_ready(latest_url):
-             action_type = "CHUNK"
-             target_hour_start = downloaded_hours
-        else:
-             # VOD finished? Maybe download the rest?
-             # For now, user request focused on incremental. 
-             # If we already downloaded partial, full download might duplicate.
-             # Ignoring this complex case for now, assuming we continue chunking or user manually handles.
-             pass
-    
-    if action_type == "CHUNK":
-        # Process Chunk Download
-        # Need cookies
+            if downloaded_chunks >= total_chunks:
+                print(f"All chunks downloaded ({downloaded_chunks}/{total_chunks}).")
+                return None
+        
+        if not update_memory:
+            # Peek mode
+            if last_ts > current_ts:
+                return latest_url 
+            else:
+                return None # Same VOD
+        
+        # Download Mode
+        target_chunk_index = downloaded_chunks
+        start_min = target_chunk_index * chunk_size
+        duration_min = chunk_size
+        
+        # Check if this chunk is theoretically within current duration?
+        # If live, we just rely on manifest readiness.
+        
         cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
-        m3u8_url = get_m3u8_url(latest_url, cookies_path)
+        m3u8_url = twitch_download.get_m3u8_url(latest_url, cookies_path)
         
         if m3u8_url:
-            # Check if next hour is available
-            # start_min = target_hour_start * 60
-            # duration_min = 60
-            
-            new_manifest = parse_and_slice_manifest(m3u8_url, start_min=target_hour_start*60, duration_min=60)
+            # Check availability using slice check
+            new_manifest = twitch_download.parse_and_slice_manifest(m3u8_url, start_min=start_min, duration_min=duration_min)
             
             if new_manifest:
-                print(f"[!] Chunk {target_hour_start+1} (Hour {target_hour_start}-{target_hour_start+1}) is ready!")
+                print(f"[!] Chunk {target_chunk_index} ({start_min}-{start_min+duration_min}m) is ready!")
+                print("Triggering chunk download via twitch_download.py...")
                 
-                if update_memory:
-                    # Create Folder Structure
-                    safe_title = clean_filename(title)
-                    safe_title = safe_title[:240] 
-                    video_dir = os.path.join(DOWNLOAD_DIR, safe_title)
+                try:
+                    twitch_download.download_video(
+                        latest_url,
+                        root_dir=DOWNLOAD_DIR,
+                        start_min=start_min,
+                        duration_min=duration_min
+                    )
+                    print("Chunk download process completed successfully.")
                     
-                    if not os.path.exists(video_dir):
-                        os.makedirs(video_dir, exist_ok=True)
-                        print(f"Created chunk directory: {video_dir}")
+                    # Update Memory
+                    memory["last_ts"] = last_ts
+                    memory["vod_url"] = latest_url
+                    memory["downloaded_chunks"] = target_chunk_index + 1
+                    memory["total_chunks"] = total_chunks # Store target/total
+                    save_memory(memory_path, memory)
+                    print(f"Memory updated: {downloaded_chunks} -> {target_chunk_index + 1} chunks (Total: {total_chunks})")
+                    return "CHUNK_DOWNLOADED"
                     
-                    # 1. Save Manifest
-                    chunk_filename = f"chunk_{target_hour_start + 1}.m3u8"
-                    chunk_path = os.path.join(video_dir, chunk_filename)
-                        
-                    with open(chunk_path, 'w') as f:
-                        f.write(new_manifest)
-                        
-                    print(f"Saved chunk manifest: {chunk_path}")
-                    
-                    # 2. Trigger Download logic
-                    output_name = f"{safe_title}_hour_{target_hour_start+1}.mp4"
-                    output_path = os.path.join(video_dir, output_name)
-                    
-                    try:
-                        print(f"Downloading chunk to: {output_path}")
-                        
-                        ydl_opts_chunk = {
-                            'cookiefile': cookies_path,
-                            'outtmpl': output_path,
-                            'quiet': True,
-                        }
-                        
-                        with yt_dlp.YoutubeDL(ydl_opts_chunk) as ydl:
-                            ydl.download([chunk_path])
-                        
-                        # Update Memory
-                        memory["last_ts"] = last_ts
-                        memory["vod_url"] = latest_url
-                        memory["downloaded_hours"] = target_hour_start + 1
-                        save_memory(memory_path, memory)
-                        print(f"Memory updated: {downloaded_hours} -> {target_hour_start + 1} hours")
-                        
-                        return "CHUNK_DOWNLOADED" # Signal main to skip generic download
-                        
-                    except Exception as e:
-                        print(f"Chunk download failed: {e}")
-                        return None
+                except Exception as e:
+                    print(f"Chunk download failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
             else:
-                 print("Next hour chunk not ready yet.")
-    
-    elif action_type == "FULL":
-        # Update memory upfront? Or after?
-        # If we return URL, main() handles download.
-        # We should assume main() succeeds?
-        if update_memory:
-            memory["last_ts"] = last_ts
-            memory["vod_url"] = latest_url
-            memory["downloaded_hours"] = 999 # completed
-            save_memory(memory_path, memory)
-            
-        return latest_url
+                 print(f"Chunk {target_chunk_index} not ready yet.")
 
+    
     return None
 
 def main():
@@ -437,37 +404,18 @@ def main():
     parser.add_argument("--channel_url", default=DEFAULT_CHANNEL_URL, help="Twitch Channel URL")
     parser.add_argument("--memory_file", default=DEFAULT_MEMORY_FILE, help="Path to memory file storing last timestamp")
     parser.add_argument("--download", action="store_true", help="If set, triggers download and updates memory.")
+    parser.add_argument("--chunk_size", type=int, default=60, help="Chunk size in minutes (default: 60)")
     
     args = parser.parse_args()
     
     # Check for new video / chunks
-    result = get_new_video(args.channel_url, args.memory_file, update_memory=args.download)
+    result = get_new_video(args.channel_url, args.memory_file, update_memory=args.download, chunk_size=args.chunk_size)
     
-    if result and result != "CHUNK_DOWNLOADED":
-        # result is a URL (Full VOD)
-        if args.download:
-            print(f"Triggering FULL download for: {result}")
-            
-            # Script location:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            downloader_script = os.path.join(script_dir, "twitch_download.py")
-            
-            cmd = ["uv", "run", downloader_script, result, "--root_dir", DOWNLOAD_DIR]
-            
-            try:
-                subprocess.run(cmd, check=True)
-                print("Download process completed successfully.")
-                
-            except subprocess.CalledProcessError as e:
-                print(f"Download script failed: {e}")
-                sys.exit(1)
-        else:
-            print(f"Found new VOD: {result}")
-            print("Download skipped (Peek mode).")
-    elif result == "CHUNK_DOWNLOADED":
+    if result == "CHUNK_DOWNLOADED":
         print("Chunk processing cycle completed.")
-
-
+    elif result and result != "CHUNK_DOWNLOADED":
+         # This usually means PEEK mode found a URL
+         print(f"Found new VOD available: {result}")
 
 if __name__ == "__main__":
     main()
