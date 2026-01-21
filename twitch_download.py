@@ -95,9 +95,12 @@ def parse_and_slice_manifest(manifest_url, start_min, duration_min):
     if end_sec:
         required_end_sec = start_sec + (duration_min * 60)
         # We allow a little flexibility/jitter, but generally strict
-        if total_duration_sec < required_end_sec: 
-             print(f"[-] Not enough content for full chunk. Total: {total_duration_sec/60:.2f}m, Required End: {required_end_sec/60:.2f}m")
-             return None
+        if total_duration_sec < required_end_sec:
+            if "#EXT-X-ENDLIST" in content:
+                print(f"[!] VOD is finalized. Downloading remaining content (Total: {total_duration_sec/60:.2f}m).")
+            else:
+                print(f"[-] Not enough content for full chunk. Total: {total_duration_sec/60:.2f}m, Required End: {required_end_sec/60:.2f}m")
+                return None
 
         current_time = 0.0 
         accumulated_dur = 0.0
