@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-import subprocess
+
 import os
 import sys
 
@@ -45,32 +45,19 @@ def trigger_crop():
 
 @app.route('/monitor', methods=['POST'])
 def trigger_monitor():
-    if not (new_video := monitor.get_new_video()):
+    # Calling get_new_video with defaults (update_memory=True) triggers the download logic internal to monitor.py
+    result = monitor.get_new_video()
+    
+    if not result:
         return jsonify({
              "status": "success", 
-            "message": "New video not found.",
-            "video": new_video
+            "message": "No new content found."
         }), 200
-
-    print(f"New video detected: {new_video}")
-
-    # Determine strict path to monitor.py
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    download_script = os.path.join(script_dir, "twitch_download.py")
-    
-    # Run monitor.py in a detached subprocess (non-blocking)
-    # We assume 'uv' is in path.
-    subprocess.Popen(
-        ["uv", "run", download_script, new_video, "--root_dir", N8N_DATA_DIR],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True # Detach from parent
-    )
 
     return jsonify({
         "status": "success", 
-        "message": "New video detected.",
-        "video": new_video
+        "message": "Monitor check completed.",
+        "result": result
     }), 200
 
 @app.route('/health', methods=['GET'])

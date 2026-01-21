@@ -8,13 +8,13 @@ from transcript import transcribe_video, translate_srt_zh
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
 # defaults
-DEFAULT_CROP_CAM = "640:720:1280:0"
-DEFAULT_CROP_SCREEN = "1280:720:0:0"
+DEFAULT_CROP_CAM = "260:180:0:298"
+DEFAULT_CROP_SCREEN = "323:442:249:26"
 # ===========================================
 # ===========================================
 WATERMARK_TEXT = "@StreamFlash"
 WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=36:x=(w-tw)/2:y=(h-th)/2"
-STACKED_WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=40:x=(w-tw)/2:y=(h-th)/3"
+STACKED_WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=40:x=(w-tw)/2:y=(h-th)/4"
 def clean_filename(text):
     """移除資料夾名稱中不合法的字元以及 Hashtags"""
     # Remove #hashtags
