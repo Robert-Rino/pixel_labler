@@ -179,7 +179,7 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
         print(f"Using existing directory: {output_dir}")
 
     # 2. Download via yt-dlp
-    output_original = os.path.join(output_dir, "original.ts")
+    output_original = os.path.join(output_dir, "original.mp4")
     output_audio = os.path.join(output_dir, "audio.mp4")
     srt_output = os.path.join(output_dir, "transcript.srt")
     
