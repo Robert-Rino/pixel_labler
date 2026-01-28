@@ -506,6 +506,7 @@ def main():
             output_file=original_output,
             engine=args.engine,
             speaker_labels=args.speaker_labels,
+            google_translate=True,
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
