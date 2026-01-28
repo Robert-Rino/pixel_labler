@@ -1,20 +1,17 @@
 import os
-import subprocess
 import re
 import argparse
-import sys
-import sys
-from transcript import transcribe_video, translate_srt_zh 
+
+
+from transcript import transcribe_video 
+import ffmpeg
+
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
 # defaults
 DEFAULT_CROP_CAM = "260:180:0:298"
 DEFAULT_CROP_SCREEN = "323:442:249:26"
 # ===========================================
-# ===========================================
-WATERMARK_TEXT = "@StreamFlash"
-WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=36:x=(w-tw)/2:y=(h-th)/2"
-STACKED_WATERMARK_FILTER = f"drawtext=text='{WATERMARK_TEXT}':fontfile='/System/Library/Fonts/Helvetica.ttc':alpha=0.5:fontcolor=white:fontsize=40:x=(w-tw)/2:y=(h-th)/4"
 def clean_filename(text):
     """移除資料夾名稱中不合法的字元以及 Hashtags"""
     # Remove #hashtags
@@ -37,74 +34,77 @@ def seconds_to_time_str(seconds):
     h, m = divmod(m, 60)
     return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
 
-def process(root_dir, crop_cam, crop_screen):
+def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
     root_dir = os.path.abspath(root_dir)
     if not os.path.exists(root_dir):
         print(f"錯誤: 目錄不存在 - {root_dir}")
         return
 
-    # 1. 讀取 crop_info.md 或 crop_info.csv
-    md_path = os.path.join(root_dir, "crop_info.md")
-    csv_path = os.path.join(root_dir, "crop_info.csv")
-    
-    input_file_path = None
-    
-    if os.path.exists(md_path):
-        input_file_path = md_path
-    elif os.path.exists(csv_path):
-        input_file_path = csv_path
-    else:
-        print(f"錯誤: 找不到 crop_info.md 或 crop_info.csv 在 {root_dir}")
-        return
-
-    print(f"正在讀取: {input_file_path}")
-    with open(input_file_path, "r", encoding="utf-8") as f:
-        markdown_data = f.read()
-
-    # 2. 確認輸入影片
+    # 2. 確認輸入影片 (Check early for single chunk mode)
     input_video_path = os.path.join(root_dir, INPUT_FILE_NAME)
     if not os.path.exists(input_video_path):
         print(f"警告: 找不到影片 {input_video_path}")
-        # 嘗試尋找其他 mp4? 或者繼續失敗
-        # return 
+        return 
 
-    # 解析 Markdown (跳過表頭)
-    lines = markdown_data.strip().split('\n')
-    table_lines = []
-    
-    # Check if format is Markdown Table (has pipes) or CSV (commas)
-    has_pipes = any("|" in line for line in lines[:5])
-    
     parsed_rows = []
-    
-    if has_pipes:
-        print("偵測到 Markdown 表格格式")
-        start_collecting = False
-        for line in lines:
-            if line.strip().startswith("|") and "---" in line:
-                start_collecting = True
-                continue
-            if start_collecting and line.strip().startswith("|"):
-                cols = [c.strip() for c in line.split('|') if c.strip()]
-                if len(cols) >= 6:
-                    parsed_rows.append(cols)
+
+    # Check for CLI Override
+    if start_arg and end_arg:
+        print(f"CLI 模式: 剪輯指定區間 {start_arg} - {end_arg}")
+        # Fake row: No Number, Start, End, Summary, Title='Custom_Clip', Hook='CLI'
+        # cols structure: [No, Start, End, Summary, Title, Hook]
+        parsed_rows.append(["CLI", start_arg, end_arg, "CLI Manual Clip", f"Custom_{start_arg}_{end_arg}", "Manual"])
     else:
-        print("偵測到 CSV 格式")
-        import csv
-        import io
-        # Use csv reader
-        # Skip header if looks like header
-        reader = csv.reader(io.StringIO(markdown_data))
-        for i, row in enumerate(reader):
-            if i == 0 and "Shorts Number" in row[0]: continue # Skip header
-            if not row: continue
-            if len(row) >= 6:
-                # Clean whitespace
-                cleaned_row = [c.strip() for c in row]
-                parsed_rows.append(cleaned_row)
+        # 1. 讀取 crop_info.md 或 crop_info.csv
+        md_path = os.path.join(root_dir, "crop_info.md")
+        csv_path = os.path.join(root_dir, "crop_info.csv")
+        
+        input_file_path = None
+        
+        if os.path.exists(md_path):
+            input_file_path = md_path
+        elif os.path.exists(csv_path):
+            input_file_path = csv_path
+        else:
+            print(f"錯誤: 找不到 crop_info.md 或 crop_info.csv 在 {root_dir}")
+            return
+    
+        print(f"正在讀取: {input_file_path}")
+        with open(input_file_path, "r", encoding="utf-8") as f:
+            markdown_data = f.read()
+
+        # 解析 Markdown (跳過表頭)
+        lines = markdown_data.strip().split('\n')
+        
+        # Check if format is Markdown Table (has pipes) or CSV (commas)
+        has_pipes = any("|" in line for line in lines[:5])
+        
+        if has_pipes:
+            print("偵測到 Markdown 表格格式")
+            start_collecting = False
+            for line in lines:
+                if line.strip().startswith("|") and "---" in line:
+                    start_collecting = True
+                    continue
+                if start_collecting and line.strip().startswith("|"):
+                    cols = [c.strip() for c in line.split('|') if c.strip()]
+                    if len(cols) >= 6:
+                        parsed_rows.append(cols)
+        else:
+            print("偵測到 CSV 格式")
+            import csv
+            import io
+            # Use csv reader
+            reader = csv.reader(io.StringIO(markdown_data))
+            for i, row in enumerate(reader):
+                if i == 0 and "Shorts Number" in row[0]: continue # Skip header
+                if not row: continue
+                if len(row) >= 6:
+                    cleaned_row = [c.strip() for c in row]
+                    parsed_rows.append(cleaned_row)
 
     if not parsed_rows:
-        print("錯誤: 找不到有效的內容 (表格或 CSV)")
+        print("錯誤: 找不到有效的內容 (表格或 CSV 或 CLIArgs)")
         return
 
     # Read root metadata if exists
@@ -145,63 +145,22 @@ def process(root_dir, crop_cam, crop_screen):
             adj_start_str = seconds_to_time_str(adj_start)
             adj_end_str = seconds_to_time_str(adj_end)
 
-            # Define output paths
-            path_stacked = os.path.join(output_folder, "stacked.mp4")
-            path_cam = os.path.join(output_folder, "cam.mp4")
-            path_screen = os.path.join(output_folder, "screen.mp4")
-            path_raw = os.path.join(output_folder, "raw.mp4")
+            # Define output path for audio (needed for transcription)
             path_audio = os.path.join(output_folder, "audio.wav")
 
-            ffmpeg_cmd = [
-                "ffmpeg", "-y", "-ss", adj_start_str, "-to", adj_end_str, "-i", input_video_path,
-                '-map_metadata', '0',
-                '-avoid_negative_ts', 'make_zero',
-                '-movflags', '+faststart',
-                "-filter_complex", 
-                # 1. Crop & Scale & Split
-                f"[0:v]crop={crop_cam},scale=1080:640,split=2[cam_base][cam_stack]; "
-                f"[0:v]crop={crop_screen},scale=1080:1280,split=2[screen_base][screen_stack]; "
-                
-                # 2. Stack
-                f"[cam_stack][screen_stack]vstack=inputs=2[stacked_base]; "
-                
-                # 3. Apply Watermark
-                f"[stacked_base]{STACKED_WATERMARK_FILTER}[stacked_out]; "
-                f"[cam_base]{WATERMARK_FILTER}[cam_out]; "
-                f"[screen_base]{WATERMARK_FILTER}[screen_out]; "
-                f"[0:v]{WATERMARK_FILTER}[raw_out]",
-                
-                # Output 1: Stacked
-                "-map", "[stacked_out]", "-map", "0:a",
-                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-aspect", "9:16",
-                path_stacked,
-                
-                # Output 2: Cam
-                "-map", "[cam_out]", "-map", "0:a",
-                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-                path_cam,
-                
-                # Output 3: Screen
-                "-map", "[screen_out]", "-map", "0:a",
-                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-                path_screen,
-                
-                # Output 4: Raw
-                "-map", "[raw_out]", "-map", "0:a",
-                "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
-                path_raw,
-                
-                # Output 5: Audio
-                "-map", "0:a",
-                "-vn",
-                path_audio
-            ]
-            
             print(f"正在剪輯: {title_folder_name} ({start_ts} - {end_ts})...")
-            # 使用 subprocess.run 執行並隱藏過多輸出，只顯示錯誤
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"FFmpeg 錯誤:\\n{result.stderr}")
+            
+            success = ffmpeg.crop(
+                input_video_path, 
+                adj_start_str, 
+                adj_end_str, 
+                output_folder=output_folder, 
+                crop_cam=crop_cam, 
+                crop_screen=crop_screen
+            )
+            
+            if not success:
+                print(f"FFmpeg 錯誤: 剪輯失敗")
             else:
                 # Transcribe audio.mp4
                 print("正在產生字幕...")
@@ -210,7 +169,7 @@ def process(root_dir, crop_cam, crop_screen):
                         input_file=path_audio,
                         output_file=os.path.join(output_folder, "transcript.srt"),
                         # speaker_labels=True,
-                        google_translate=True
+                        # google_translate=True
                     )
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")
@@ -236,9 +195,17 @@ def main():
     parser.add_argument("root_dir", help="包含 crop_info.md 和 original.mp4 的根目錄路徑")
     parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM})")
     parser.add_argument("--screen", default=DEFAULT_CROP_SCREEN, help=f"Screen crop parameter (default: {DEFAULT_CROP_SCREEN})")
+    parser.add_argument("--start", help="Start time (e.g. 00:00:10). usage with --end")
+    parser.add_argument("--end", help="End time (e.g. 00:00:20). usage with --start")
     
     args = parser.parse_args()
-    process(args.root_dir, args.cam, args.screen)
+
+    # Validation
+    if (args.start and not args.end) or (args.end and not args.start):
+        print("錯誤: --start 和 --end 必須同時提供")
+        return
+
+    process(args.root_dir, args.cam, args.screen, start_arg=args.start, end_arg=args.end)
 
 if __name__ == "__main__":
     main()
