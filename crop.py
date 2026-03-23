@@ -1,10 +1,9 @@
 import os
 import re
 import argparse
-
-
 from transcript import transcribe_video 
 import ffmpeg
+from facecam_utils import detect_facecam
 
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
@@ -193,7 +192,7 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
 def main():
     parser = argparse.ArgumentParser(description="自動剪輯工具")
     parser.add_argument("root_dir", help="包含 crop_info.md 和 original.mp4 的根目錄路徑")
-    parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM})")
+    parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM}). Use 'auto' for ML detection.")
     parser.add_argument("--screen", default=DEFAULT_CROP_SCREEN, help=f"Screen crop parameter (default: {DEFAULT_CROP_SCREEN})")
     parser.add_argument("--start", help="Start time (e.g. 00:00:10). usage with --end")
     parser.add_argument("--end", help="End time (e.g. 00:00:20). usage with --start")
@@ -205,7 +204,23 @@ def main():
         print("錯誤: --start 和 --end 必須同時提供")
         return
 
-    process(args.root_dir, args.cam, args.screen, start_arg=args.start, end_arg=args.end)
+    cam_param = args.cam
+    if cam_param == "auto":
+        input_video_path = os.path.join(args.root_dir, INPUT_FILE_NAME)
+        if os.path.exists(input_video_path):
+            print("正在自動偵測 Facecam 區域 (ML)...")
+            detected = detect_facecam(input_video_path)
+            if detected:
+                print(f"偵測成功: {detected}")
+                cam_param = detected
+            else:
+                print(f"偵測失敗，使用預設值: {DEFAULT_CROP_CAM}")
+                cam_param = DEFAULT_CROP_CAM
+        else:
+            print(f"找不到影片 {input_video_path}，無法自動偵測，使用預設值: {DEFAULT_CROP_CAM}")
+            cam_param = DEFAULT_CROP_CAM
+
+    process(args.root_dir, cam_param, args.screen, start_arg=args.start, end_arg=args.end)
 
 if __name__ == "__main__":
     main()
