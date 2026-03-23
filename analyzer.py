@@ -74,7 +74,7 @@ def extract_audio_peaks(video_path, threshold_factor=2.0, window_size=1.0, sampl
     for i in range(len(rms_array)):
         if rms_array[i] > threshold_factor * rolling_avg[i]:
             score = rms_array[i] / max(rolling_avg[i], 1e-6)
-            peaks.append((timestamps[i], score))
+            peaks.append((float(timestamps[i]), float(score)))
             
     return peaks
 
@@ -155,7 +155,7 @@ def analyze_chat_velocity(json_path, window_size=10, threshold_factor=1.5):
         if window_counts[i] > threshold_factor * baseline:
             # Spike at the middle of the window
             timestamp = float(i * window_size + window_size / 2)
-            score = window_counts[i] / baseline
+            score = float(window_counts[i] / baseline)
             spikes.append((timestamp, score))
             
     return spikes
@@ -209,7 +209,7 @@ def find_segments(audio_peaks, chat_spikes, video_duration, window_size=15, max_
             end = start + max_duration
             
         # Calculate score and reason
-        total_score = sum(s['score'] for s in event)
+        total_score = float(sum(s['score'] for s in event))
         types = set(s['type'] for s in event)
         if 'audio' in types and 'chat' in types:
             reason = "Audio + Chat Spike"
