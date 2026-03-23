@@ -10,6 +10,7 @@ import pathlib
 import transcript
 import n8n
 import analyzer
+import chat_utils
 import yt_dlp
 import datetime
 
@@ -225,8 +226,6 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
             'fragment_retries': 10,
             'ignoreerrors': True,
             'enable_file_urls': True,
-            'writesubtitles': True,
-            'subtitlesformat': 'rechat',
         }
         
         # Add cookies if needed for local m3u8? usually not if local file, 
@@ -249,7 +248,13 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
             print("Error: Video download finished but output file missing.")
             sys.exit(1)
 
-    # 2.2 Audio Download (Direct Audio_Only)
+    # 2.2 Chat Download (via chat_utils)
+    rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
+    if not os.path.exists(rechat_path):
+        print(f"Downloading chat for: {url}...")
+        chat_utils.download_chat(url, rechat_path, start_min, duration_min)
+
+    # 2.3 Audio Download (Direct Audio_Only)
     if audio and not os.path.exists(output_audio):
         # Extract Audio from Video using ffmpeg
         ffmpeg_cmd = [

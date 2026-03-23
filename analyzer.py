@@ -117,6 +117,9 @@ def analyze_chat_velocity(json_path, window_size=10, threshold_factor=1.5):
         message_obj = entry.get("message", {})
         if isinstance(message_obj, dict):
             message = message_obj.get("body", "")
+            if not message:
+                fragments = message_obj.get("fragments", [])
+                message = "".join([f.get("text", "") for f in fragments if isinstance(f, dict)])
         else:
             message = str(entry.get("comment", "")) # Fallback
 
