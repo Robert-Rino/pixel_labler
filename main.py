@@ -357,6 +357,11 @@ class FFmpegCropTool:
         self.root.config(cursor="watch")
         self.root.update()
         
+        # Add a temporary status label if it doesn't exist
+        status_label = ttk.Label(self.root, text="Auto-detecting facecam, please wait...")
+        status_label.pack(side=tk.BOTTOM, fill=tk.X)
+        self.root.update()
+        
         try:
             # We can use a smaller max_frames for faster detection in GUI
             crop_str = detect_facecam(self.video_path, max_frames=150)
@@ -380,6 +385,7 @@ class FFmpegCropTool:
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred during detection: {e}")
         finally:
+            status_label.destroy()
             self.root.config(cursor="")
 
 def main():

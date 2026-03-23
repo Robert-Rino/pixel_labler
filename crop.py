@@ -189,6 +189,24 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
         with open(os.path.join(output_folder, "metadata.md"), "w", encoding="utf-8") as f:
             f.write(final_metadata)
 
+def resolve_cam_param(root_dir, cam_arg):
+    if cam_arg != "auto":
+        return cam_arg
+        
+    input_video_path = os.path.join(root_dir, INPUT_FILE_NAME)
+    if not os.path.exists(input_video_path):
+        print(f"Warning: {input_video_path} not found. Using default: {DEFAULT_CROP_CAM}")
+        return DEFAULT_CROP_CAM
+
+    print("Auto-detecting facecam (ML)...")
+    detected = detect_facecam(input_video_path)
+    if detected:
+        print(f"Detected: {detected}")
+        return detected
+    
+    print(f"Detection failed. Using default: {DEFAULT_CROP_CAM}")
+    return DEFAULT_CROP_CAM
+
 def main():
     parser = argparse.ArgumentParser(description="自動剪輯工具")
     parser.add_argument("root_dir", help="包含 crop_info.md 和 original.mp4 的根目錄路徑")
@@ -199,27 +217,11 @@ def main():
     
     args = parser.parse_args()
 
-    # Validation
     if (args.start and not args.end) or (args.end and not args.start):
         print("錯誤: --start 和 --end 必須同時提供")
         return
 
-    cam_param = args.cam
-    if cam_param == "auto":
-        input_video_path = os.path.join(args.root_dir, INPUT_FILE_NAME)
-        if os.path.exists(input_video_path):
-            print("正在自動偵測 Facecam 區域 (ML)...")
-            detected = detect_facecam(input_video_path)
-            if detected:
-                print(f"偵測成功: {detected}")
-                cam_param = detected
-            else:
-                print(f"偵測失敗，使用預設值: {DEFAULT_CROP_CAM}")
-                cam_param = DEFAULT_CROP_CAM
-        else:
-            print(f"找不到影片 {input_video_path}，無法自動偵測，使用預設值: {DEFAULT_CROP_CAM}")
-            cam_param = DEFAULT_CROP_CAM
-
+    cam_param = resolve_cam_param(args.root_dir, args.cam)
     process(args.root_dir, cam_param, args.screen, start_arg=args.start, end_arg=args.end)
 
 if __name__ == "__main__":

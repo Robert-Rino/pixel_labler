@@ -5,14 +5,14 @@ import re
 import yt_dlp
 import subprocess
 from transcript import transcribe_video
+from typing import Optional, Dict
 
-def clean_filename(text):
-    """Remove invalid characters for folder names"""
-    # Replace invalid chars with underscore or empty
+def clean_filename(text: str) -> str:
+    """Remove invalid characters for folder names."""
     return re.sub(r'[\\/*?:"<>|]', "", text).strip()
 
-def validate_youtube_url(url):
-    """Simple validation for YouTube URLs"""
+def validate_youtube_url(url: str) -> bool:
+    """Simple validation for YouTube URLs."""
     youtube_regex = (
         r'(https?://)?(www\.)?'
         r'(youtube|youtu|youtube-nocookie)\.(com|be)/'
@@ -21,130 +21,102 @@ def validate_youtube_url(url):
     )
     return re.match(youtube_regex, url) is not None
 
-def download_video(url, root_dir=".", force_transcript=False, extract_audio=True):
+def _extract_audio(input_video: str, output_audio: str, use_copy: bool = False):
+    """Helper to extract audio from video using FFmpeg."""
+    if os.path.exists(output_audio):
+        return
+    
+    print(f"Extracting audio to {output_audio}...")
+    cmd = ["ffmpeg", "-y", "-i", input_video, "-vn"]
+    if use_copy:
+        cmd += ["-c:a", "copy"]
+    
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"Audio extraction failed: {e}")
+
+def _download_chunked(url: str, output_dir: str, duration: int, extract_audio: bool):
+    """Downloads video in 1-hour chunks."""
+    for i, start_sec in enumerate(range(0, int(duration), 3600)):
+        end_sec = min(start_sec + 3600, duration)
+        chunk_name = f"{start_sec//60}-{int(end_sec//60)}"
+        chunk_dir = os.path.join(output_dir, chunk_name)
+        
+        if not os.path.exists(chunk_dir):
+            os.makedirs(chunk_dir)
+             
+        print(f"--> Processing Chunk {i+1}: {chunk_name} ({start_sec}-{end_sec}s)")
+        chunk_output = os.path.join(chunk_dir, "original.mp4")
+        
+        if not os.path.exists(chunk_output):
+            ydl_opts = {
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'outtmpl': chunk_output,
+                'merge_output_format': 'mp4',
+                'download_ranges': lambda _, _2, s=start_sec, e=end_sec: [{'start_time': s, 'end_time': e}],
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+
+        if extract_audio:
+            _extract_audio(chunk_output, os.path.join(chunk_dir, "audio.wav"))
+
+def download_video(url: str, root_dir: str = ".", force_transcript: bool = False, extract_audio: bool = True):
     if not validate_youtube_url(url):
         print(f"Error: Invalid YouTube URL: {url}")
         sys.exit(1)
 
-    print(f"Processing URL: {url}")
-
-    # 1. Get Video Information (Metadata)
-    ydl_opts_meta = {
-        'quiet': True,
-        'no_warnings': True,
-    }
-    
+    # 1. Get Metadata
     try:
-        with yt_dlp.YoutubeDL(ydl_opts_meta) as ydl:
+        with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
             info = ydl.extract_info(url, download=False)
             duration = info.get('duration', 0)
+            title = info.get('title', 'Untitled')
+            description = info.get('description', '')
     except Exception as e:
         print(f"Error fetching metadata: {e}")
         sys.exit(1)
 
-    title = info.get('title', 'Untitled')
-    description = info.get('description', '')
-    
-    safe_title = clean_filename(title)
-    safe_title = safe_title[:240] 
-
-    root_dir = os.path.abspath(root_dir)
-    output_dir = os.path.join(root_dir, safe_title)
-
-    transcript_output = os.path.join(output_dir, "transcript.srt")
-    
+    output_dir = os.path.join(os.path.abspath(root_dir), clean_filename(title)[:240])
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-        print(f"Created directory: {output_dir}")
-    else:
-        print(f"Using existing directory: {output_dir}")
 
-    # 2. Download Video
-    output_template = os.path.join(output_dir, "original.mp4")
-    
-    ydl_opts_download = {
+    # 2. Chunked Download for long videos
+    if duration > 3600:
+        print(f"Long video ({duration}s). Switching to chunked download.")
+        _download_chunked(url, output_dir, duration, extract_audio)
+        return
+
+    # 3. Standard Download
+    video_output = os.path.join(output_dir, "original.mp4")
+    print(f"Downloading: {title}")
+    with yt_dlp.YoutubeDL({
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-        'outtmpl': output_template,
+        'outtmpl': video_output,
         'merge_output_format': 'mp4',
-    }
+    }) as ydl:
+        ydl.download([url])
 
-    print(f"Downloading video '{title}'...")
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts_download) as ydl:
-            ydl.download([url])
-    except Exception as e:
-        print(f"Download failed: {e}")
-        sys.exit(1)
+    # 4. Post-processing
+    with open(os.path.join(output_dir, "metadata.md"), "w", encoding="utf-8") as f:
+        f.write(f"```\nSource: {url}\nTitle: {title}\nDescription: {description}\n```\n")
 
-    # 3. Create Metadata File
-    metadata_path = os.path.join(output_dir, "metadata.md")
-    print(f"Writing metadata to: {metadata_path}")
-    
-    with open(metadata_path, "w", encoding="utf-8") as f:
-        f.write("```\n")
-        f.write(f"Source: {url}\n")
-        f.write(f"Title: {title}\n")
-        f.write(f"Description: {description}\n")
-        f.write("```\n")
+    if extract_audio or force_transcript:
+        _extract_audio(video_output, os.path.join(output_dir, "audio.mp4"), use_copy=True)
 
-    print(f"Output saved in: {output_dir}")
-
-    # 2.5 Extract Audio (if requested or forced by transcript)
-    if force_transcript:
-        extract_audio = True
-
-    if extract_audio:
-        print(f"Extracting audio to audio.mp4...")
-        audio_path = os.path.join(output_dir, "audio.mp4")
-        # ffmpeg -i input.mp4 -vn -c:a copy output.mp4
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", output_template,
-            "-vn",
-            "-c:a", "copy",
-            audio_path
-        ]
-        try:
-             # Run quietly
-             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-             print(f"Audio extracted: {audio_path}")
-        except subprocess.CalledProcessError as e:
-             print(f"Audio extraction failed: {e}")
-
-    # 4. Auto-Transcribe if Short
-    is_short = "/shorts/" in url or (duration > 0 and duration < 180)
-    
-    split_by_hour = True
-    if is_short:
-        split_by_hour = False
-    
+    # 5. Transcription
+    is_short = "/shorts/" in url or (0 < duration < 180)
     if is_short or force_transcript:
-        reason = "Short video" if is_short else "Forced via flag"
-        print(f"\n[Auto-Transcribe] Triggered ({reason}).")
-        print("Starting transcription...")
-        try:
-            transcribe_video(
-                input_file=output_template,
-                output_file=transcript_output,
-                google_translate=True,
-                # zh_output="zh.srt",
-                # split_by_hour=split_by_hour,
-                # speaker_labels=True,
-                
-            )
-        except Exception as e:
-            print(f"Transcription failed: {str(e)}")
-    else:
-        print(f"\nVideo duration is {duration}s. Skipping auto-transcription (only for < 180s).")
-
-    print("\nDone!")
+        print(f"\nAuto-transcribing...")
+        transcribe_video(input_file=video_output, output_file=os.path.join(output_dir, "transcript.srt"), google_translate=True)
 
 def main():
     parser = argparse.ArgumentParser(description="YouTube Downloader")
     parser.add_argument("url", help="YouTube Video URL")
-    parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
-    parser.add_argument("--transcript", action="store_true", default=False, help="Force generate transcript")
-    parser.add_argument("--audio", action=argparse.BooleanOptionalAction, default=True, help="Extract audio stream (default: True)")
+    parser.add_argument("--root_dir", default=".", help="Root directory")
+    parser.add_argument("--transcript", action="store_true", help="Force transcript")
+    parser.add_argument("--audio", action=argparse.BooleanOptionalAction, default=True, help="Extract audio")
     args = parser.parse_args()
 
     download_video(args.url, root_dir=args.root_dir, force_transcript=args.transcript, extract_audio=args.audio)

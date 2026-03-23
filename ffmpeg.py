@@ -49,24 +49,22 @@ def crop(input_video_path, start, end, output_folder=None, crop_cam="260:180:0:2
     path_raw = os.path.join(output_folder, "raw.mp4")
     path_audio = os.path.join(output_folder, "audio.wav")
 
-    ffmpeg_cmd = [
-        "ffmpeg", "-y", "-ss", start, "-to", end, "-i", input_video_path,
-        '-map_metadata', '0',
-        '-avoid_negative_ts', 'make_zero',
-        '-movflags', '+faststart',
-        "-filter_complex", 
-        # 1. Crop & Scale & Split
+    filter_complex = (
         f"[0:v]crop={crop_cam},scale=1080:640,split=2[cam_base][cam_stack]; "
         f"[0:v]crop={crop_screen},scale=1080:1280,split=2[screen_base][screen_stack]; "
-        
-        # 2. Stack
         f"[cam_stack][screen_stack]vstack=inputs=2[stacked_base]; "
-        
-        # 3. Apply Watermark
         f"[stacked_base]{STACKED_WATERMARK_FILTER}[stacked_out]; "
         f"[cam_base]{WATERMARK_FILTER}[cam_out]; "
         f"[screen_base]{WATERMARK_FILTER}[screen_out]; "
-        f"[0:v]{WATERMARK_FILTER}[raw_out]",
+        f"[0:v]{WATERMARK_FILTER}[raw_out]"
+    )
+
+    ffmpeg_cmd = [
+        "ffmpeg", "-y", "-ss", start, "-to", end, "-i", input_video_path,
+        "-map_metadata", "0",
+        "-avoid_negative_ts", "make_zero",
+        "-movflags", "+faststart",
+        "-filter_complex", filter_complex,
         
         # Output 1: Stacked
         "-map", "[stacked_out]", "-map", "0:a",
@@ -89,9 +87,7 @@ def crop(input_video_path, start, end, output_folder=None, crop_cam="260:180:0:2
         path_raw,
         
         # Output 5: Audio
-        "-map", "0:a",
-        "-vn",
-        path_audio
+        "-map", "0:a", "-vn", path_audio
     ]
     
     # print(f"Executing FFmpeg...")
