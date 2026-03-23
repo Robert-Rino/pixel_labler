@@ -76,6 +76,87 @@ def extract_audio_peaks(video_path, threshold_factor=2.0, window_size=1.0, sampl
             
     return peaks
 
+def analyze_chat_velocity(json_path, window_size=10, threshold_factor=1.5):
+    """
+    Parses rechat.json and identifies spikes in weighted chat velocity.
+    """
+    import json
+    if not os.path.exists(json_path):
+        return []
+
+    with open(json_path, 'r') as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            # Handle possible line-by-line JSON format if yt-dlp produces it
+            f.seek(0)
+            data = []
+            for line in f:
+                if line.strip():
+                    data.append(json.loads(line))
+
+    if not data:
+        return []
+
+    # Emotes with 2.0x weight
+    emotes = {"Pog", "LUL", "KEKW", "OMEGALUL", "!!!"}
+    
+    # Calculate weighted count for each message
+    weighted_messages = []
+    max_time = 0
+    for entry in data:
+        # Some formats might have "content_offset_seconds" directly, 
+        # others might be nested or have different names.
+        # Based on yt-dlp rechat format:
+        timestamp = entry.get("content_offset_seconds")
+        if timestamp is None:
+            # Fallback for other potential formats
+            timestamp = entry.get("offset", 0)
+            
+        message_obj = entry.get("message", {})
+        if isinstance(message_obj, dict):
+            message = message_obj.get("body", "")
+        else:
+            message = str(entry.get("comment", "")) # Fallback
+
+        weight = 1.0
+        for emote in emotes:
+            if emote.lower() in message.lower():
+                weight = 2.0
+                break
+        
+        weighted_messages.append((timestamp, weight))
+        if timestamp > max_time:
+            max_time = timestamp
+
+    # Window the messages
+    num_windows = int(max_time // window_size) + 1
+    window_counts = np.zeros(num_windows)
+    
+    for timestamp, weight in weighted_messages:
+        window_idx = int(timestamp // window_size)
+        if window_idx < num_windows:
+            window_counts[window_idx] += weight
+
+    # Calculate rolling average (baseline)
+    rolling_window = 10
+    rolling_avg = np.zeros_like(window_counts)
+    for i in range(len(window_counts)):
+        start = max(0, i - rolling_window // 2)
+        end = min(len(window_counts), i + rolling_window // 2 + 1)
+        rolling_avg[i] = np.mean(window_counts[start:end])
+
+    # Identify spikes
+    spikes = []
+    for i in range(len(window_counts)):
+        # Avoid division by zero or very low baseline
+        baseline = max(rolling_avg[i], 1.0)
+        if window_counts[i] > threshold_factor * baseline:
+            # Spike at the middle of the window
+            spikes.append(float(i * window_size + window_size / 2))
+            
+    return spikes
+
 if __name__ == "__main__":
     # Test script for standalone use
     import sys

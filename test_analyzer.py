@@ -2,7 +2,8 @@ import unittest
 import numpy as np
 import os
 import subprocess
-from analyzer import extract_audio_peaks
+import json
+from analyzer import extract_audio_peaks, analyze_chat_velocity
 
 class TestAudioAnalyzer(unittest.TestCase):
     def setUp(self):
@@ -37,6 +38,51 @@ class TestAudioAnalyzer(unittest.TestCase):
         # Verify no peaks in the quiet part (0-4s)
         found_in_quiet = any(0.0 <= p <= 4.0 for p in peaks)
         self.assertFalse(found_in_quiet, f"Found unexpected peaks in quiet section: {peaks}")
+
+class TestChatAnalyzer(unittest.TestCase):
+    def setUp(self):
+        self.test_json = "test_rechat.json"
+        
+        # Mock rechat data
+        # Quiet period: 0-20s (1 message every 5s)
+        # Spike: 25-35s (10 messages in 10s, some with emotes)
+        # Quiet period: 40-60s (1 message every 5s)
+        data = []
+        for t in range(0, 21, 5):
+            data.append({"content_offset_seconds": float(t), "message": {"body": "hello"}})
+            
+        # Spike at 30s
+        for t in range(25, 36):
+            msg = "Pog" if t % 2 == 0 else "wow"
+            data.append({"content_offset_seconds": float(t), "message": {"body": msg}})
+            
+        for t in range(40, 61, 5):
+            data.append({"content_offset_seconds": float(t), "message": {"body": "hello"}})
+            
+        with open(self.test_json, "w") as f:
+            json.dump(data, f)
+
+    def tearDown(self):
+        if os.path.exists(self.test_json):
+            os.remove(self.test_json)
+
+    def test_analyze_chat_velocity(self):
+        # window_size=10, threshold_factor=1.5
+        spikes = analyze_chat_velocity(self.test_json, window_size=10, threshold_factor=1.5)
+        
+        # Verify spikes is a list
+        self.assertIsInstance(spikes, list)
+        
+        # We expect a spike around 30s
+        # 25-35s has 11 messages. Weighted (5 * 2.0 + 6 * 1.0) = 16.0
+        # Quiet periods have 2-3 messages per 10s window. Weighted = 2.0-3.0
+        # Baseline should be around 2.0-3.0. 16.0 is way above 1.5 * baseline.
+        found_spike = any(25.0 <= s <= 35.0 for s in spikes)
+        self.assertTrue(found_spike, f"Expected spike around 30s, found: {spikes}")
+        
+        # Verify no spikes in quiet periods
+        found_in_quiet = any(0.0 <= s <= 20.0 or 45.0 <= s <= 60.0 for s in spikes)
+        self.assertFalse(found_in_quiet, f"Found unexpected spikes in quiet section: {spikes}")
 
 if __name__ == "__main__":
     unittest.main()
