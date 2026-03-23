@@ -9,6 +9,7 @@ import requests
 import pathlib
 import transcript
 import n8n
+import analyzer
 import yt_dlp
 import datetime
 
@@ -301,7 +302,24 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
     else:
         print("Transcript already exists.")
 
-    # 5. N8N Trigger    
+    # 5. Signal Analysis (Audio & Chat)
+    rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
+    if not os.path.exists(rechat_path):
+        rechat_path = os.path.join(output_dir, "original.rechat.json")
+        
+    if os.path.exists(output_original):
+        print(f"Running signal analysis for: {output_original}")
+        try:
+            analyzer.analyze_video(
+                video_path=output_original,
+                chat_json=rechat_path if os.path.exists(rechat_path) else None
+            )
+        except Exception as e:
+            print(f"Signal analysis failed: {e}")
+    else:
+        print("Video missing, skipping analysis.")
+
+    # 6. N8N Trigger    
     try:
         n8n.trigger('analyze', trigger_folder)
     except Exception as e:
