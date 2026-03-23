@@ -221,9 +221,11 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
             'concurrent_fragment_downloads': 16, 
             'external_downloader': {'m3u8': 'native'},
             'retries': 10,
-            ' fragment_retries': 10,
+            'fragment_retries': 10,
             'ignoreerrors': True,
             'enable_file_urls': True,
+            'writesubtitles': True,
+            'subtitlesformat': 'rechat',
         }
         
         # Add cookies if needed for local m3u8? usually not if local file, 
