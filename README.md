@@ -48,17 +48,28 @@ Download VODs from Twitch using `yt-dlp` and `chat_utils`.
 
 ### Usage
 ```bash
+# Download entire VOD
 uv run twitch_download.py "TWITCH_VOD_URL"
+
+# Download specific range (e.g., from minute 10 to 30)
+uv run twitch_download.py "TWITCH_VOD_URL" --start_min 10 --duration_min 20
 ```
 
 ### Features
 - **Optimized Video**: Downloads `480p` (or best ≤ 480p) to `original.mp4`.
-- **Chat Download**: Automatically fetches full Twitch chat logs using the GQL API (bypasses 404 errors).
+- **Slicing Support**: Can download specific time ranges without fetching the entire VOD.
+- **Chat Download**: Automatically fetches full (or sliced) Twitch chat logs using the GQL API.
 - **Direct Audio**: Extracts audio directly to `audio.mp4`.
 - **Auto-Pipeline**:
     1. Downloads Video, Audio, and Chat.
     2. Transcribes Audio (generating `transcript.srt`).
     3. Triggers N8N workflow (`analyze`).
+
+### Options
+- `--root_dir`: Base directory for downloads.
+- `--audio` / `--no-audio`: Toggle audio extraction.
+- `--start_min`: Start time in minutes.
+- `--duration_min`: Duration to download in minutes.
 
 ---
 
