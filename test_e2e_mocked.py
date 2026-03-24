@@ -3,23 +3,14 @@ import os
 import json
 import shutil
 import subprocess
-from twitch_download import download_video
+import sys
+from twitch_download import main as twitch_main
 
 class TestE2EMocked(unittest.TestCase):
     def setUp(self):
         self.root_dir = "test_e2e_output"
         if not os.path.exists(self.root_dir):
             os.makedirs(self.root_dir)
-            
-        # We need to simulate the folder structure twitch_download creates
-        # Title format: Twitch_VOD_{uploader}_{date_str}
-        # For simplicity, we'll mock the metadata part or just use a known folder name
-        # But download_video fetches metadata via yt-dlp, which might fail if URL is invalid.
-        # Let's mock yt_dlp or use a real but short URL if possible.
-        # Actually, let's just mock the folder it would create.
-        
-        # To avoid yt-dlp metadata fetch, we might need to mock it.
-        # But wait, download_video calls yt-dlp first thing.
 
     def tearDown(self):
         if os.path.exists(self.root_dir):
@@ -41,31 +32,7 @@ class TestE2EMocked(unittest.TestCase):
                 'duration': 60
             }
             
-            # We want to catch the moment after the directory is created but before yt-dlp download starts.
-            # However, download_video is one big function.
-            # Alternative: Since we know the title it will generate, we can just match it.
-            # Based on previous run, it was Twitch_VOD_testuser_2023-01-01T08_00_00
-            
-            # Let's mock download_video's internal yt-dlp call to actually create the file
-            # or just mock os.path.exists for original.mp4 to return True.
-            
-            # Actually, the simplest way is to mock yt-dlp download to just create a dummy file.
-            def mock_download(urls):
-                # The output path is in ydl_opts_video['outtmpl']
-                # But we don't have easy access to it here.
-                pass
-
-            # Let's try to mock os.path.exists specifically for the check it does.
-            original_exists = [False] # First check: False (to enter download), then we want it to be True?
-            # No, if it's False, it tries to download.
-            
-            # Let's just mock the folder it would create, but use a glob to find it.
-            # Or better, let's use a side_effect on a mock that we know is called after directory creation.
-            
-            # I will just use the exact name from the previous error for now, 
-            # but I'll make it more flexible.
-            
-            date_str = "2023-01-01T08_00_00" # Based on previous failure
+            date_str = "2023-01-01T08_00_00" 
             video_dir = os.path.join(self.root_dir, f"Twitch_VOD_testuser_{date_str}")
             os.makedirs(video_dir, exist_ok=True)
             
@@ -91,9 +58,12 @@ class TestE2EMocked(unittest.TestCase):
             
             with mock.patch('n8n.trigger') as mock_n8n, \
                  mock.patch('transcript.transcribe_video') as mock_transcribe, \
-                 mock.patch('transcript.split_srt_by_hour') as mock_split:
+                 mock.patch('transcript.split_srt_by_hour') as mock_split, \
+                 mock.patch('chat_utils.download_chat') as mock_chat:
                 
-                download_video("https://www.twitch.tv/videos/123456789", root_dir=self.root_dir, audio=True)
+                # Mock sys.argv to simulate command line call
+                with mock.patch.object(sys, 'argv', ["twitch_download.py", "https://www.twitch.tv/videos/123456789", "--root_dir", self.root_dir]):
+                    twitch_main()
                 
                 # Check if segments.json was created
                 segments_path = os.path.join(video_dir, "segments.json")
