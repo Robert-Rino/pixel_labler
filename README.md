@@ -58,9 +58,7 @@ uv run twitch_download.py "TWITCH_VOD_URL"
 - **Auto-Pipeline**:
     1. Downloads Video, Audio, and Chat.
     2. Transcribes Audio (generating `transcript.srt`).
-    3. **Signal Analysis**: Fuses Audio RMS peaks and Chat Velocity to find interesting moments.
-    4. Generates `segments.json` (Top 10 highlights per hour).
-    5. Triggers N8N workflow (`analyze`).
+    3. Triggers N8N workflow (`analyze`).
 
 ---
 
@@ -80,24 +78,11 @@ uv run python chat_utils.py "TWITCH_VOD_URL" chat.json 0 60
 ### Features
 - **GQL Powered**: Uses Twitch's internal GraphQL API for high reliability.
 - **Range Support**: Can jump to any timestamp using `--start_min` and `--duration_min`.
-- **Format Compatible**: Produces JSON structured specifically for the Segment Analyzer.
+- **Format Compatible**: Produces a structured JSON chat log.
 
 ---
 
-## 4. Segment Analyzer (`analyzer.py`)
-
-Identifies high-energy moments in a VOD using data fusion.
-
-### Features
-- **Audio Analysis**: Detects volume spikes (RMS energy) that exceed a rolling baseline.
-- **Chat Analysis**: Detects message velocity spikes with weighting for "hype" emotes (Pog, LUL, etc.).
-- **Data Fusion**: Cross-references audio and chat peaks to find high-confidence highlights.
-- **Dynamic Boundaries**: Automatically calculates clip start/end (e.g., 5s before spike, 10s after).
-- **Top 10 Ranking**: Ranks and selects the best 10 segments for every hour of content.
-
----
-
-## 5. YouTube Downloader (`yt_download.py`)
+## 4. YouTube Downloader (`yt_download.py`)
 
 Download videos from YouTube.
 
@@ -114,7 +99,7 @@ uv run yt_download.py "YOUTUBE_URL"
 
 ---
 
-## 6. Transcription Tool (`transcript.py`)
+## 5. Transcription Tool (`transcript.py`)
 
 Generate SRT subtitles using **AssemblyAI** (default) or **faster-whisper**, with translation support using **Google Translate** (default) or **Ollama**.
 
@@ -140,7 +125,7 @@ uv run transcript.py /path/to/video.mp4 --zh_output "zh.srt"
 
 ---
 
-## 7. Generic Translator (`translate.py`)
+## 6. Generic Translator (`translate.py`)
 
 Simple CLI tool to translate text/files using Google Translate.
 
@@ -155,7 +140,7 @@ uv run translate.py path/to/file.txt
 
 ---
 
-## 8. Batch Clipper (`crop.py`)
+## 7. Batch Clipper (`crop.py`)
 
 Process a long video into multiple clips based on a list.
 
@@ -172,7 +157,7 @@ uv run crop.py /path/to/RootFolder
 
 ---
 
-## 9. Interactive Crop UI (`main.py`)
+## 8. Interactive Crop UI (`main.py`)
 
 Visual tool to determine FFmpeg crop parameters.
 
