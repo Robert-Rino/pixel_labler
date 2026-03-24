@@ -291,27 +291,49 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
         print("Metadata file exists.")
 
     print(f"Output saved in: {output_dir}")
+    return output_dir, trigger_folder
+
+def main():
+    parser = argparse.ArgumentParser(description="Twitch Downloader (via yt-dlp)")
+    parser.add_argument("url", help="Twitch VOD URL")
+    parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
+    parser.add_argument("--audio", action='store_true', default=True, help="Extract audio (default: True)")
+    parser.add_argument("--start_min", type=int, default=None, help="Start time in minutes for slicing")
+    parser.add_argument("--duration_min", type=int, default=None, help="Duration in minutes for slicing")
+    args = parser.parse_args()
+
+    output_dir, trigger_folder = download_video(
+        args.url, 
+        root_dir=args.root_dir, 
+        audio=args.audio, 
+        start_min=args.start_min, 
+        duration_min=args.duration_min
+    )
+
+    # Post-download logic moved out of download_video
+    output_audio = os.path.join(output_dir, "audio.mp4")
+    srt_output = os.path.join(output_dir, "transcript.srt")
+    output_original = os.path.join(output_dir, "original.mp4")
 
     # 4. Auto-Transcribe
     if not os.path.exists(srt_output):
-        print("Starting transcription...")
-        try:
-            transcript.transcribe_video(
-                input_file=output_audio,
-                output_file=srt_output,
-            )
-        except Exception as e:
-            print(f"Transcription failed: {str(e)}")
-
-        transcript.split_srt_by_hour(srt_output)
+        if os.path.exists(output_audio):
+            print("Starting transcription...")
+            try:
+                transcript.transcribe_video(
+                    input_file=output_audio,
+                    output_file=srt_output,
+                )
+                transcript.split_srt_by_hour(srt_output)
+            except Exception as e:
+                print(f"Transcription failed: {str(e)}")
+        else:
+            print("Audio file missing, skipping transcription.")
     else:
         print("Transcript already exists.")
 
     # 5. Signal Analysis (Audio & Chat)
     rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
-    if not os.path.exists(rechat_path):
-        rechat_path = os.path.join(output_dir, "original.rechat.json")
-        
     if os.path.exists(output_original):
         print(f"Running signal analysis for: {output_original}")
         try:
@@ -331,17 +353,6 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
         print(f"N8N Trigger failed: {e}")
 
     print("\nDone!")
-
-def main():
-    parser = argparse.ArgumentParser(description="Twitch Downloader (via yt-dlp)")
-    parser.add_argument("url", help="Twitch VOD URL")
-    parser.add_argument("--root_dir", default=".", help="Root directory to create video folder in (default: current directory)")
-    parser.add_argument("--audio", action='store_true', default=True, help="Extract audio (default: True)")
-    parser.add_argument("--start_min", type=int, default=None, help="Start time in minutes for slicing")
-    parser.add_argument("--duration_min", type=int, default=None, help="Duration in minutes for slicing")
-    args = parser.parse_args()
-
-    download_video(args.url, root_dir=args.root_dir, audio=args.audio, start_min=args.start_min, duration_min=args.duration_min)
 
 if __name__ == "__main__":
     main()
