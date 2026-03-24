@@ -332,19 +332,19 @@ def main():
     else:
         print("Transcript already exists.")
 
-    # 5. Signal Analysis (Audio & Chat)
-    rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
-    if os.path.exists(output_original):
-        print(f"Running signal analysis for: {output_original}")
-        try:
-            analyzer.analyze_video(
-                video_path=output_original,
-                chat_json=rechat_path if os.path.exists(rechat_path) else None
-            )
-        except Exception as e:
-            print(f"Signal analysis failed: {e}")
-    else:
-        print("Video missing, skipping analysis.")
+    # # 5. Signal Analysis (Audio & Chat) - To be implemented in other PR
+    # rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
+    # if os.path.exists(output_original):
+    #     print(f"Running signal analysis for: {output_original}")
+    #     try:
+    #         analyzer.analyze_video(
+    #             video_path=output_original,
+    #             chat_json=rechat_path if os.path.exists(rechat_path) else None
+    #         )
+    #     except Exception as e:
+    #         print(f"Signal analysis failed: {e}")
+    # else:
+    #     print("Video missing, skipping analysis.")
 
     # 6. N8N Trigger    
     try:
