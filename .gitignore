@@ -1,5 +1,5 @@
 # Python-generated files
-__pycache__/*
+__pycache__/
 *.py[oc]
 build/
 dist/
@@ -18,7 +18,7 @@ sa.json
 # Local files
 *.txt
 *.log
-assets/*
+assets/
 
 # Agents
 .gemini/*
