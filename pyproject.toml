@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "argostranslate>=1.10.0",
     "assemblyai>=0.48.4",
+    "chat-downloader>=0.2.8",
     "deep-translator>=1.11.4",
     "faster-whisper>=1.2.1",
     "flask>=3.1.2",

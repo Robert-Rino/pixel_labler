@@ -18,3 +18,8 @@ sa.json
 # Local files
 *.txt
 *.log
+assets/
+
+# Agents
+.gemini/*
+.superpowers/*
