@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, ttk, messagebox
 import cv2
 from PIL import Image, ImageTk
 import argparse
 import sys
 import os
+from facecam_utils import detect_facecam
 
 class FFmpegCropTool:
     def __init__(self, root, video_path=None, frame_num=1):
@@ -50,7 +51,9 @@ class FFmpegCropTool:
 
         ttk.Button(control_frame, text="Go", command=self.reload_frame).pack(side=tk.LEFT)
         
-        ttk.Button(control_frame, text="Reset Crops", command=self.reset_crops).pack(side=tk.LEFT, padx=20)
+        ttk.Button(control_frame, text="Auto Detect Facecam", command=self.auto_detect_facecam).pack(side=tk.LEFT, padx=10)
+        
+        ttk.Button(control_frame, text="Reset Crops", command=self.reset_crops).pack(side=tk.LEFT, padx=10)
         
         self.coord_label = ttk.Label(control_frame, text="Mouse: (0, 0)")
         self.coord_label.pack(side=tk.RIGHT, padx=10)
@@ -345,6 +348,45 @@ class FFmpegCropTool:
         for widget in self.ranges_frame.winfo_children():
             widget.destroy()
         self.redraw_rectangles()
+
+    def auto_detect_facecam(self):
+        if not self.video_path:
+            messagebox.showwarning("Warning", "Please open a video first")
+            return
+            
+        self.root.config(cursor="watch")
+        self.root.update()
+        
+        # Add a temporary status label if it doesn't exist
+        status_label = ttk.Label(self.root, text="Auto-detecting facecam, please wait...")
+        status_label.pack(side=tk.BOTTOM, fill=tk.X)
+        self.root.update()
+        
+        try:
+            # We can use a smaller max_frames for faster detection in GUI
+            crop_str = detect_facecam(self.video_path, max_frames=150)
+            if crop_str:
+                w, h, x, y = map(int, crop_str.split(':'))
+                # Check if this crop already exists
+                exists = False
+                for (rx, ry, rw, rh) in self.rectangles:
+                    if rx == x and ry == y and rw == w and rh == h:
+                        exists = True
+                        break
+                
+                if not exists:
+                    self.rectangles.append((x, y, w, h))
+                    self.redraw_rectangles()
+                    self.update_output()
+                
+                messagebox.showinfo("Success", f"Detected facecam: {crop_str}")
+            else:
+                messagebox.showwarning("Failed", "Could not detect facecam automatically")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred during detection: {e}")
+        finally:
+            status_label.destroy()
+            self.root.config(cursor="")
 
 def main():
     parser = argparse.ArgumentParser(description="FFmpeg Crop Tool")

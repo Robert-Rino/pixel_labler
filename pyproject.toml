@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "argostranslate>=1.10.0",
     "assemblyai>=0.48.4",
+    "chat-downloader>=0.2.8",
     "deep-translator>=1.11.4",
     "faster-whisper>=1.2.1",
     "flask>=3.1.2",
@@ -14,6 +15,7 @@ dependencies = [
     "google-genai>=1.56.0",
     "ipython>=9.8.0",
     "mlx-whisper>=0.4.3",
+    "numpy>=2.0.2",
     "opencc>=1.1.9",
     "opencc-python-reimplemented>=0.1.7",
     "opencv-python>=4.12.0.88",
@@ -23,5 +25,7 @@ dependencies = [
     "requests>=2.32.5",
     "srt>=3.5.3",
     "streamlink>=8.1.0",
+    "tcd>=3.2.1",
+    "ultralytics>=8.4.24",
     "yt-dlp>=2025.12.8",
 ]

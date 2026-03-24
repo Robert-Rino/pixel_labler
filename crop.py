@@ -1,10 +1,9 @@
 import os
 import re
 import argparse
-
-
 from transcript import transcribe_video 
 import ffmpeg
+from facecam_utils import detect_facecam
 
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
@@ -190,22 +189,40 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
         with open(os.path.join(output_folder, "metadata.md"), "w", encoding="utf-8") as f:
             f.write(final_metadata)
 
+def resolve_cam_param(root_dir, cam_arg):
+    if cam_arg != "auto":
+        return cam_arg
+        
+    input_video_path = os.path.join(root_dir, INPUT_FILE_NAME)
+    if not os.path.exists(input_video_path):
+        print(f"Warning: {input_video_path} not found. Using default: {DEFAULT_CROP_CAM}")
+        return DEFAULT_CROP_CAM
+
+    print("Auto-detecting facecam (ML)...")
+    detected = detect_facecam(input_video_path)
+    if detected:
+        print(f"Detected: {detected}")
+        return detected
+    
+    print(f"Detection failed. Using default: {DEFAULT_CROP_CAM}")
+    return DEFAULT_CROP_CAM
+
 def main():
     parser = argparse.ArgumentParser(description="自動剪輯工具")
     parser.add_argument("root_dir", help="包含 crop_info.md 和 original.mp4 的根目錄路徑")
-    parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM})")
+    parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM}). Use 'auto' for ML detection.")
     parser.add_argument("--screen", default=DEFAULT_CROP_SCREEN, help=f"Screen crop parameter (default: {DEFAULT_CROP_SCREEN})")
     parser.add_argument("--start", help="Start time (e.g. 00:00:10). usage with --end")
     parser.add_argument("--end", help="End time (e.g. 00:00:20). usage with --start")
     
     args = parser.parse_args()
 
-    # Validation
     if (args.start and not args.end) or (args.end and not args.start):
         print("錯誤: --start 和 --end 必須同時提供")
         return
 
-    process(args.root_dir, args.cam, args.screen, start_arg=args.start, end_arg=args.end)
+    cam_param = resolve_cam_param(args.root_dir, args.cam)
+    process(args.root_dir, cam_param, args.screen, start_arg=args.start, end_arg=args.end)
 
 if __name__ == "__main__":
     main()
