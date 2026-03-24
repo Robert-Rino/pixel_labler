@@ -44,7 +44,7 @@ uv run monitor.py
 
 ## 2. Twitch Downloader (`twitch_download.py`)
 
-Download VODs from Twitch using `yt-dlp` (optimized for archiving).
+Download VODs from Twitch using `yt-dlp` and `chat_utils`.
 
 ### Usage
 ```bash
@@ -52,22 +52,52 @@ uv run twitch_download.py "TWITCH_VOD_URL"
 ```
 
 ### Features
-- **Optimized Video**: Downloads `480p` (or best ≤ 480p) to `original.mp4` (small size for processing).
-- **Direct Audio**: Downloads `Audio Only` stream directly to `audio.mp4` (no re-encoding if possible).
-- **High Speed**: Uses 10 concurrent threads for downloading.
+- **Optimized Video**: Downloads `480p` (or best ≤ 480p) to `original.mp4`.
+- **Chat Download**: Automatically fetches full Twitch chat logs using the GQL API (bypasses 404 errors).
+- **Direct Audio**: Extracts audio directly to `audio.mp4`.
 - **Auto-Pipeline**:
-    1. Downloads Video & Audio.
+    1. Downloads Video, Audio, and Chat.
     2. Transcribes Audio (generating `transcript.srt`).
-    3. Splits SRT by hour.
-    4. Triggers N8N workflow (`analyze`).
-
-### Options
-- `--root_dir`: Base directory.
-- `--audio` / `--no-audio`: Toggle audio download.
+    3. **Signal Analysis**: Fuses Audio RMS peaks and Chat Velocity to find interesting moments.
+    4. Generates `segments.json` (Top 10 highlights per hour).
+    5. Triggers N8N workflow (`analyze`).
 
 ---
 
-## 3. YouTube Downloader (`yt_download.py`)
+## 3. Chat Downloader (`chat_utils.py`)
+
+A robust Twitch chat downloader using the modern GQL API.
+
+### Usage
+```bash
+# Download entire chat
+uv run python chat_utils.py "TWITCH_VOD_URL" chat.json
+
+# Download specific range (e.g., first hour)
+uv run python chat_utils.py "TWITCH_VOD_URL" chat.json 0 60
+```
+
+### Features
+- **GQL Powered**: Uses Twitch's internal GraphQL API for high reliability.
+- **Range Support**: Can jump to any timestamp using `--start_min` and `--duration_min`.
+- **Format Compatible**: Produces JSON structured specifically for the Segment Analyzer.
+
+---
+
+## 4. Segment Analyzer (`analyzer.py`)
+
+Identifies high-energy moments in a VOD using data fusion.
+
+### Features
+- **Audio Analysis**: Detects volume spikes (RMS energy) that exceed a rolling baseline.
+- **Chat Analysis**: Detects message velocity spikes with weighting for "hype" emotes (Pog, LUL, etc.).
+- **Data Fusion**: Cross-references audio and chat peaks to find high-confidence highlights.
+- **Dynamic Boundaries**: Automatically calculates clip start/end (e.g., 5s before spike, 10s after).
+- **Top 10 Ranking**: Ranks and selects the best 10 segments for every hour of content.
+
+---
+
+## 5. YouTube Downloader (`yt_download.py`)
 
 Download videos from YouTube.
 
@@ -84,7 +114,7 @@ uv run yt_download.py "YOUTUBE_URL"
 
 ---
 
-## 4. Transcription Tool (`transcript.py`)
+## 6. Transcription Tool (`transcript.py`)
 
 Generate SRT subtitles using **AssemblyAI** (default) or **faster-whisper**, with translation support using **Google Translate** (default) or **Ollama**.
 
@@ -110,7 +140,7 @@ uv run transcript.py /path/to/video.mp4 --zh_output "zh.srt"
 
 ---
 
-## 5. Generic Translator (`translate.py`)
+## 7. Generic Translator (`translate.py`)
 
 Simple CLI tool to translate text/files using Google Translate.
 
@@ -125,7 +155,7 @@ uv run translate.py path/to/file.txt
 
 ---
 
-## 6. Batch Clipper (`crop.py`)
+## 8. Batch Clipper (`crop.py`)
 
 Process a long video into multiple clips based on a list.
 
@@ -142,7 +172,7 @@ uv run crop.py /path/to/RootFolder
 
 ---
 
-## 7. Interactive Crop UI (`main.py`)
+## 9. Interactive Crop UI (`main.py`)
 
 Visual tool to determine FFmpeg crop parameters.
 
