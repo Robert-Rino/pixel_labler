@@ -8,9 +8,9 @@ import ffmpeg
 
 # ================= 配置區域 =================
 INPUT_FILE_NAME = "original.mp4"
-# defaults
-DEFAULT_CROP_CAM = "260:180:0:298"
-DEFAULT_CROP_SCREEN = "323:442:249:26"
+# defaults (asmongold)
+DEFAULT_CROP_CAM = '557:412:5:668'
+DEFAULT_CROP_SCREEN = '739:1080:585:0'
 # ===========================================
 def clean_filename(text):
     """移除資料夾名稱中不合法的字元以及 Hashtags"""
