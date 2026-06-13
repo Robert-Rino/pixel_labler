@@ -5,12 +5,11 @@ import twitch_download
 
 class TestTwitchDownload(unittest.TestCase):
     @patch('chat_utils.download_chat')
-    @patch('analyzer.analyze_video')
     @patch('yt_dlp.YoutubeDL')
     @patch('subprocess.run')
     @patch('transcript.transcribe_video')
     @patch('n8n.trigger')
-    def test_download_video_calls_chat_utils(self, mock_n8n, mock_transcribe, mock_subprocess, mock_yt_dlp, mock_analyze, mock_download_chat):
+    def test_download_video_calls_chat_utils(self, mock_n8n, mock_transcribe, mock_subprocess, mock_yt_dlp, mock_download_chat):
         # Setup
         url = "https://www.twitch.tv/videos/12345678"
         mock_instance = mock_yt_dlp.return_value.__enter__.return_value

@@ -71,6 +71,18 @@ uv run twitch_download.py "TWITCH_VOD_URL" --start_min 10 --duration_min 20
 - `--start_min`: Start time in minutes.
 - `--duration_min`: Duration to download in minutes.
 
+### Python Interface (`downloader.py`)
+```bash
+# Download an entire Twitch VOD
+uv run python -c 'from downloader import TwitchDownloader; TwitchDownloader(root_dir=".").download("TWITCH_VOD_URL")'
+
+# Download a Twitch range/chunk in minutes
+uv run python -c 'from downloader import TwitchDownloader; TwitchDownloader(root_dir=".").download("TWITCH_VOD_URL", start_min=0, duration_min=60)'
+
+# Auto-select the correct downloader by URL
+uv run python -c 'from downloader import get_downloader; url = "TWITCH_VOD_URL"; get_downloader(url, root_dir=".").download(url)'
+```
+
 ---
 
 ## 3. Chat Downloader (`chat_utils.py`)
@@ -108,9 +120,18 @@ uv run yt_download.py "YOUTUBE_URL"
 - **Audio Extraction**: Automatically extracts audio to `audio.mp4`.
 - **Auto-Transcribe**: Automatically transcribes Shorts (< 180s).
 
----
+### Python Interface (`downloader.py`)
+```bash
+# Download a YouTube video
+uv run python -c 'from downloader import YTDownloader; YTDownloader(root_dir=".").download("YOUTUBE_URL")'
 
-## 5. Transcription Tool (`transcript.py`)
+# Force transcript generation and skip audio extraction
+uv run python -c 'from downloader import YTDownloader; YTDownloader(root_dir=".").download("YOUTUBE_URL", force_transcript=True, extract_audio=False)'
+
+# Auto-select the correct downloader by URL
+uv run python -c 'from downloader import get_downloader; url = "YOUTUBE_URL"; get_downloader(url, root_dir=".").download(url)'
+```
+
 
 Generate SRT subtitles using **AssemblyAI** (default) or **faster-whisper**, with translation support using **Google Translate** (default) or **Ollama**.
 

@@ -138,6 +138,7 @@ def download_video(url, root_dir=".", force_transcript=False, extract_audio=True
         print(f"\nVideo duration is {duration}s. Skipping auto-transcription (only for < 180s).")
 
     print("\nDone!")
+    return output_dir
 
 def main():
     parser = argparse.ArgumentParser(description="YouTube Downloader")
