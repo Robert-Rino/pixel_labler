@@ -315,21 +315,21 @@ def main():
     output_original = os.path.join(output_dir, "original.mp4")
 
     # 4. Auto-Transcribe
-    if not os.path.exists(srt_output):
-        if os.path.exists(output_audio):
-            print("Starting transcription...")
-            try:
-                transcript.transcribe_video(
-                    input_file=output_audio,
-                    output_file=srt_output,
-                )
-                transcript.split_srt_by_hour(srt_output)
-            except Exception as e:
-                print(f"Transcription failed: {str(e)}")
-        else:
-            print("Audio file missing, skipping transcription.")
-    else:
-        print("Transcript already exists.")
+    # if not os.path.exists(srt_output):
+    #     if os.path.exists(output_audio):
+    #         print("Starting transcription...")
+    #         try:
+    #             transcript.transcribe_video(
+    #                 input_file=output_audio,
+    #                 output_file=srt_output,
+    #             )
+    #             transcript.split_srt_by_hour(srt_output)
+    #         except Exception as e:
+    #             print(f"Transcription failed: {str(e)}")
+    #     else:
+    #         print("Audio file missing, skipping transcription.")
+    # else:
+    #     print("Transcript already exists.")
 
     # # 5. Signal Analysis (Audio & Chat) - To be implemented in other PR
     # rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
@@ -346,10 +346,10 @@ def main():
     #     print("Video missing, skipping analysis.")
 
     # 6. N8N Trigger    
-    try:
-        n8n.trigger('analyze', trigger_folder)
-    except Exception as e:
-        print(f"N8N Trigger failed: {e}")
+    # try:
+    #     n8n.trigger('analyze', trigger_folder)
+    # except Exception as e:
+    #     print(f"N8N Trigger failed: {e}")
 
     print("\nDone!")
 
