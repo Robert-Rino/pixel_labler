@@ -189,7 +189,38 @@ uv run crop.py /path/to/RootFolder
 
 ---
 
-## 8. Interactive Crop UI (`main.py`)
+## 9. Subtitle Encoder (`encode_subtitle.py`)
+
+Burn an SRT subtitle file into a video using FFmpeg/libass.
+
+### Usage
+```bash
+uv run encode_subtitle.py input.mp4 subtitle.srt output.mp4
+```
+
+### Example
+```bash
+uv run encode_subtitle.py \
+  Twitch_VOD_zackrawrr_2026-06-12T12_01_37/Custom_005647_005715/stacked.mp4 \
+  Twitch_VOD_zackrawrr_2026-06-12T12_01_37/臘腸-逐字飽.srt \
+  Twitch_VOD_zackrawrr_2026-06-12T12_01_37/Custom_005647_005715/result.mp4
+```
+
+### Features
+- Converts SRT to a temporary ASS subtitle file for stable positioning.
+- Burns subtitles into the video stream with `libx264`.
+- Copies the original audio stream without re-encoding.
+- Default style is black text with white outline.
+- Default fixed subtitle anchor is `pos(540,610)` for 1080x1920 stacked videos.
+
+### Options
+- `--style`: Override the ASS style string.
+- `--crf`: x264 quality value (default: `20`).
+- `--preset`: x264 encoding preset (default: `veryfast`).
+
+---
+
+## 10. Interactive Crop UI (`main.py`)
 
 Visual tool to determine FFmpeg crop parameters.
 
