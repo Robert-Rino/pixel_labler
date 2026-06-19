@@ -247,47 +247,47 @@ def download_video(url, root_dir=".", audio=True, start_min=None, duration_min=N
             print("Error: Video download finished but output file missing.")
             sys.exit(1)
 
-    # 2.2 Chat Download (via chat_utils)
-    rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
-    if not os.path.exists(rechat_path):
-        print(f"Downloading chat for: {url}...")
-        chat_utils.download_chat(url, rechat_path, start_min, duration_min)
+    # # 2.2 Chat Download (via chat_utils)
+    # rechat_path = os.path.join(output_dir, "original.mp4.rechat.json")
+    # if not os.path.exists(rechat_path):
+    #     print(f"Downloading chat for: {url}...")
+    #     chat_utils.download_chat(url, rechat_path, start_min, duration_min)
 
-    # 2.3 Audio Download (Direct Audio_Only)
-    if audio and not os.path.exists(output_audio):
-        # Extract Audio from Video using ffmpeg
-        ffmpeg_cmd = [
-                "ffmpeg", "-y", "-i", output_original,
-                '-vn', 
-                '-acodec', 'copy',
-                output_audio,
-            ]
+    # # 2.3 Audio Download (Direct Audio_Only)
+    # if audio and not os.path.exists(output_audio):
+    #     # Extract Audio from Video using ffmpeg
+    #     ffmpeg_cmd = [
+    #             "ffmpeg", "-y", "-i", output_original,
+    #             '-vn', 
+    #             '-acodec', 'copy',
+    #             output_audio,
+    #         ]
             
-        print(f"Extracting audio from: {output_original}...")
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"FFmpeg error:\\n{result.stderr}")
-            # Don't return, maybe try to continue? But audio is needed for transcript.
-            # If audio extraction fails, we probably can't transcribe.
-            pass
+    #     print(f"Extracting audio from: {output_original}...")
+    #     result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    #     if result.returncode != 0:
+    #         print(f"FFmpeg error:\\n{result.stderr}")
+    #         # Don't return, maybe try to continue? But audio is needed for transcript.
+    #         # If audio extraction fails, we probably can't transcribe.
+    #         pass
 
-    # 3. Create Metadata File
-    metadata_path = os.path.join(output_dir, "metadata.md")
-    if not os.path.exists(metadata_path):
-        print(f"Writing metadata to: {metadata_path}")
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            f.write("```\n")
-            f.write(f"Source: {url}\n")
-            f.write(f"Title: {title}\n")
-            f.write(f"Original Title: {original_title}\n")
-            f.write(f"Description: {description}\n")
-            # Add Chunk Info
-            if start_min is not None:
-                f.write(f"Chunk Start: {start_min}m\n")
-                f.write(f"Chunk Duration: {duration_min}m\n")
-            f.write("```\n")
-    else:
-        print("Metadata file exists.")
+    # # 3. Create Metadata File
+    # metadata_path = os.path.join(output_dir, "metadata.md")
+    # if not os.path.exists(metadata_path):
+    #     print(f"Writing metadata to: {metadata_path}")
+    #     with open(metadata_path, "w", encoding="utf-8") as f:
+    #         f.write("```\n")
+    #         f.write(f"Source: {url}\n")
+    #         f.write(f"Title: {title}\n")
+    #         f.write(f"Original Title: {original_title}\n")
+    #         f.write(f"Description: {description}\n")
+    #         # Add Chunk Info
+    #         if start_min is not None:
+    #             f.write(f"Chunk Start: {start_min}m\n")
+    #             f.write(f"Chunk Duration: {duration_min}m\n")
+    #         f.write("```\n")
+    # else:
+    #     print("Metadata file exists.")
 
     print(f"Output saved in: {output_dir}")
     return output_dir, trigger_folder
