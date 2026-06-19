@@ -14,6 +14,8 @@ wheels/
 
 # Google Cloud
 sa.json
+client_secret.json
+youtube_token.json
 
 # Local files
 *.txt
@@ -23,3 +25,6 @@ assets/
 # Agents
 .gemini/*
 .superpowers/*
+
+# Downloaded assets
+Twitch_VOD*/*
