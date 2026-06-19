@@ -1,9 +1,12 @@
 import os
 import re
 import argparse
+import subprocess
 
 
 from transcript import transcribe_video 
+from encode_subtitle import encode_subtitle
+from thumbnail import generate_thumbnail
 import ffmpeg
 
 # ================= 配置區域 =================
@@ -34,6 +37,125 @@ def seconds_to_time_str(seconds):
     h, m = divmod(m, 60)
     return f"{int(h):02d}:{int(m):02d}:{s:06.3f}"
 
+def build_record(number, start, end, title, hook="", metadata=""):
+    return {
+        "number": number,
+        "start": start,
+        "end": end,
+        "title": title,
+        "hook": hook,
+        "metadata": metadata,
+    }
+
+def parse_twitch_crop_records(markdown_data):
+    """Parse twitch-crop-records.md sections split by ## record headings."""
+    records = []
+    current_heading = None
+    current_lines = []
+
+    def flush_record():
+        if current_heading is None:
+            return
+
+        fields = {}
+        for line in current_lines:
+            match = re.match(r"\s*-\s*([^:]+):\s*(.*)\s*$", line)
+            if match:
+                key = match.group(1).strip().lower()
+                fields[key] = match.group(2).strip()
+
+        start = fields.get("start", "")
+        end = fields.get("end", "")
+        title = fields.get("title", "")
+        if not (start and end and title):
+            print(f"警告: 跳過不完整的 twitch crop record: {current_heading}")
+            return
+
+        record_metadata = "\n".join([current_heading, *current_lines]).strip()
+        records.append(build_record(
+            number=current_heading.lstrip("#").strip(),
+            start=start,
+            end=end,
+            title=title,
+            hook=fields.get("second-title", ""),
+            metadata=record_metadata,
+        ))
+
+    for raw_line in markdown_data.replace("\ufeff", "").splitlines():
+        if re.match(r"^##\s+\S+", raw_line):
+            flush_record()
+            current_heading = raw_line.strip()
+            current_lines = []
+        elif current_heading is not None:
+            current_lines.append(raw_line.rstrip())
+
+    flush_record()
+    return records
+
+def parse_record_metadata(metadata):
+    fields = {}
+    for line in metadata.splitlines():
+        match = re.match(r"\s*-\s*([^:]+):\s*(.*)\s*$", line)
+        if match:
+            fields[match.group(1).strip().lower()] = match.group(2).strip()
+    return fields
+
+def load_metadata_fields(metadata_path):
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        return parse_record_metadata(f.read())
+
+def burn_thumbnail_as_first_frame(video_path, thumbnail_path):
+    """Replace the first video frame with the generated thumbnail."""
+    output_dir = os.path.dirname(os.path.abspath(video_path))
+    temp_path = os.path.join(output_dir, ".thumbnail-first-frame.mp4")
+    filter_complex = (
+        "[1:v]scale=1080:1920[thumbnail];"
+        "[0:v][thumbnail]overlay=0:0:enable='eq(n,0)'[video_out]"
+    )
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        video_path,
+        "-i",
+        thumbnail_path,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[video_out]",
+        "-map",
+        "0:a?",
+        "-map_metadata",
+        "0",
+        "-map_chapters",
+        "0",
+        "-c:v",
+        "libx264",
+        "-crf",
+        "18",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "copy",
+        "-movflags",
+        "+faststart",
+        temp_path,
+    ]
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"FFmpeg 錯誤: 縮圖寫入第一幀失敗\n{result.stderr}")
+            return False
+
+        os.replace(temp_path, video_path)
+        return True
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
     root_dir = os.path.abspath(root_dir)
     if not os.path.exists(root_dir):
@@ -46,88 +168,53 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
         print(f"警告: 找不到影片 {input_video_path}")
         return 
 
-    parsed_rows = []
-
-    # Check for CLI Override
     if start_arg and end_arg:
         print(f"CLI 模式: 剪輯指定區間 {start_arg} - {end_arg}")
-        # Fake row: No Number, Start, End, Summary, Title='Custom_Clip', Hook='CLI'
-        # cols structure: [No, Start, End, Summary, Title, Hook]
-        parsed_rows.append(["CLI", start_arg, end_arg, "CLI Manual Clip", f"Custom_{start_arg}_{end_arg}", "Manual"])
+        parsed_rows = [build_record(
+            number="CLI",
+            start=start_arg,
+            end=end_arg,
+            title=f"Custom_{start_arg}_{end_arg}",
+            hook="Manual",
+            metadata="\n".join([
+                "## CLI",
+                "- Title: Manual",
+                "- Second-title:",
+                f"- Start: {start_arg}",
+                f"- End: {end_arg}",
+            ]),
+        )]
     else:
-        # 1. 讀取 crop_info.md 或 crop_info.csv
-        md_path = os.path.join(root_dir, "crop_info.md")
-        csv_path = os.path.join(root_dir, "crop_info.csv")
-        
-        input_file_path = None
-        
-        if os.path.exists(md_path):
-            input_file_path = md_path
-        elif os.path.exists(csv_path):
-            input_file_path = csv_path
-        else:
-            print(f"錯誤: 找不到 crop_info.md 或 crop_info.csv 在 {root_dir}")
+        # 1. 讀取 twitch-crop-records.md
+        twitch_records_path = os.path.join(root_dir, "twitch-crop-records.md")
+        if not os.path.exists(twitch_records_path):
+            print(f"錯誤: 找不到 twitch-crop-records.md 在 {root_dir}")
             return
-    
-        print(f"正在讀取: {input_file_path}")
-        with open(input_file_path, "r", encoding="utf-8") as f:
+        
+        print(f"正在讀取: {twitch_records_path}")
+        with open(twitch_records_path, "r", encoding="utf-8") as f:
             markdown_data = f.read()
 
-        # 解析 Markdown (跳過表頭)
-        lines = markdown_data.strip().split('\n')
-        
-        # Check if format is Markdown Table (has pipes) or CSV (commas)
-        has_pipes = any("|" in line for line in lines[:5])
-        
-        if has_pipes:
-            print("偵測到 Markdown 表格格式")
-            start_collecting = False
-            for line in lines:
-                if line.strip().startswith("|") and "---" in line:
-                    start_collecting = True
-                    continue
-                if start_collecting and line.strip().startswith("|"):
-                    cols = [c.strip() for c in line.split('|') if c.strip()]
-                    if len(cols) >= 6:
-                        parsed_rows.append(cols)
-        else:
-            print("偵測到 CSV 格式")
-            import csv
-            import io
-            # Use csv reader
-            reader = csv.reader(io.StringIO(markdown_data))
-            for i, row in enumerate(reader):
-                if i == 0 and "Shorts Number" in row[0]: continue # Skip header
-                if not row: continue
-                if len(row) >= 6:
-                    cleaned_row = [c.strip() for c in row]
-                    parsed_rows.append(cleaned_row)
+        parsed_rows = parse_twitch_crop_records(markdown_data)
 
     if not parsed_rows:
-        print("錯誤: 找不到有效的內容 (表格或 CSV 或 CLIArgs)")
+        print("錯誤: 找不到有效的 twitch crop records")
         return
 
-    # Read root metadata if exists
-    root_metadata_path = os.path.join(root_dir, "metadata.md")
-    root_metadata_content = ""
-    if os.path.exists(root_metadata_path):
-        with open(root_metadata_path, "r", encoding="utf-8") as f:
-            root_metadata_content = f.read()
-
-    for cols in parsed_rows:
-        # 編號 | 開始時間 | 結束時間 | 片段摘要 | 賣點建議標題 | Hook建議副標題
-        # cols[0] = 編號, cols[1] = Start, cols[2] = End, cols[3] = Summary, cols[4] = Title, cols[5] = Hook
-        
-        start_ts = cols[1]
-        end_ts = cols[2]
-        title_folder_name = clean_filename(cols[4])
-        hook_text = cols[5]
+    for record in parsed_rows:
+        start_ts = record["start"]
+        end_ts = record["end"]
+        title_text = record["title"]
+        title_folder_name = clean_filename(title_text)
         
         # 3. 建立資料夾
         output_folder = os.path.join(root_dir, title_folder_name)
         if not os.path.exists(output_folder):
             os.makedirs(output_folder)
             print(f"建立目錄: {output_folder}")
+        metadata_path = os.path.join(output_folder, "metadata.md")
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            f.write(record["metadata"])
 
         # 4. 執行 ffmpeg 指令
         if os.path.exists(input_video_path):
@@ -164,6 +251,7 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
             else:
                 # Transcribe audio.mp4
                 print("正在產生字幕...")
+                subtitle_ready = False
                 try:
                     transcribe_video(
                         input_file=path_audio,
@@ -171,28 +259,54 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
                         # speaker_labels=True,
                         # google_translate=True
                     )
+                    subtitle_ready = True
+                except SystemExit as e:
+                    print(f"字幕產生失敗: transcribe_video exited with code {e.code}")
                 except Exception as e:
                     print(f"字幕產生失敗: {e}")
+
+                encoded_ready = False
+                if subtitle_ready:
+                    print("正在壓製字幕...")
+                    try:
+                        encode_subtitle(
+                            os.path.join(output_folder, "stacked.mp4"),
+                            os.path.join(output_folder, "result-zh.srt"),
+                            os.path.join(output_folder, "result.mp4"),
+                        )
+                        encoded_ready = True
+                    except Exception as e:
+                        print(f"字幕壓製失敗: {e}")
+
+                if encoded_ready:
+                    print("正在產生縮圖...")
+                    thumbnail_ready = False
+                    thumbnail_path = os.path.join(output_folder, "thumbnail.jpg")
+                    try:
+                        fields = load_metadata_fields(metadata_path)
+                        generate_thumbnail(
+                            os.path.join(output_folder, "stacked.mp4"),
+                            fields.get("title") or title_text,
+                            output_path=thumbnail_path,
+                            second_title=fields.get("second-title") or None,
+                            emoji=fields.get("emoji") or None,
+                        )
+                        thumbnail_ready = True
+                    except Exception as e:
+                        print(f"縮圖產生失敗: {e}")
+
+                    if thumbnail_ready:
+                        print("正在將縮圖寫入影片第一幀...")
+                        burn_thumbnail_as_first_frame(
+                            os.path.join(output_folder, "result.mp4"),
+                            thumbnail_path,
+                        )
         else:
             print(f"跳過剪輯 (找不到原始影片): {title_folder_name}")
 
-        # 5. 產生 metadata.md
-        clip_metadata = '\n'.join([
-            f'{start_ts} -> {end_ts}',
-            '# 標題', cols[4],
-            '# 副標題', hook_text,
-        ])
-        
-        final_metadata = clip_metadata
-        if root_metadata_content:
-            final_metadata = f"{root_metadata_content}\n==========\n\n{clip_metadata}"
-            
-        with open(os.path.join(output_folder, "metadata.md"), "w", encoding="utf-8") as f:
-            f.write(final_metadata)
-
 def main():
     parser = argparse.ArgumentParser(description="自動剪輯工具")
-    parser.add_argument("root_dir", help="包含 crop_info.md 和 original.mp4 的根目錄路徑")
+    parser.add_argument("root_dir", help="包含 twitch-crop-records.md 和 original.mp4 的根目錄路徑")
     parser.add_argument("--cam", default=DEFAULT_CROP_CAM, help=f"Camera crop parameter (default: {DEFAULT_CROP_CAM})")
     parser.add_argument("--screen", default=DEFAULT_CROP_SCREEN, help=f"Screen crop parameter (default: {DEFAULT_CROP_SCREEN})")
     parser.add_argument("--start", help="Start time (e.g. 00:00:10). usage with --end")
@@ -200,7 +314,6 @@ def main():
     
     args = parser.parse_args()
 
-    # Validation
     if (args.start and not args.end) or (args.end and not args.start):
         print("錯誤: --start 和 --end 必須同時提供")
         return

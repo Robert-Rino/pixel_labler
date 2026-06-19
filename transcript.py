@@ -1,495 +1,275 @@
 import os
 import sys
 import argparse
-import time
-import requests
 import json
-import opencc
-from datetime import timedelta
-from collections import defaultdict
-from faster_whisper import WhisperModel
+from pathlib import Path
 import assemblyai as aai
-import srt
-from googlecloud import GoogleTranslator
 
-def ms_to_srt_time(ms):
-    """Converts milliseconds to SRT timestamp format HH:MM:SS,mmm"""
-    seconds = ms / 1000
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+PUNCTUATION_BREAKS = (".", "?", "!")
+TRAILING_PUNCTUATION = ".,!?;:"
 
-def generate_semantic_captions(words):
-    """
-    words: List of dicts e.g., [{'text': 'Hello', 'start': 100, 'end': 500}, ...]
-    """
-    
-    # --- CONFIGURATION ---
-    MAX_CHARS = 42           # Max characters per line (Netflix standard is 42)
-    MAX_DURATION = 3000      # Max duration of a subtitle line in ms (3 seconds)
-    GAP_THRESHOLD = 500      # If silence between words > 500ms, force break
-    # ---------------------
 
-    captions = []
-    current_line = []
-    
-    for i, word in enumerate(words):
-        # Clean the text to ensure we catch punctuation
-        text = word['text'].strip()
-        start = word['start']
-        end = word['end']
-        
-        # 1. Determine if we should start a new line
-        is_new_line = False
-        
-        if not current_line:
-            is_new_line = False # First word of the whole file
-        else:
-            prev_word = current_line[-1]
-            prev_text = prev_word['text'].strip()
-            
-            # RULE A: Time Gap (Silence)
-            # If gap between prev end and current start is large
-            time_gap = start - prev_word['end']
-            if time_gap > GAP_THRESHOLD:
-                is_new_line = True
-            
-            # RULE B: Punctuation
-            # If previous word ended a sentence
-            elif prev_text.endswith(('.', '?', '!')):
-                is_new_line = True
-            
-            # RULE C: Length Constraints
-            # Calculate current length if we added this word
-            current_char_count = sum(len(w['text']) + 1 for w in current_line)
-            
-            if current_char_count + len(text) > MAX_CHARS:
-                is_new_line = True
-            elif (end - current_line[0]['start']) > MAX_DURATION:
-                is_new_line = True
+def format_timestamp(ms):
+    ms = max(0, int(round(ms)))
+    hours = ms // 3_600_000
+    ms -= hours * 3_600_000
+    minutes = ms // 60_000
+    ms -= minutes * 60_000
+    seconds = ms // 1_000
+    ms -= seconds * 1_000
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d},{ms:03d}"
 
-        # 2. Add to current line or flush and start new
-        if is_new_line:
-            captions.append(current_line)
-            current_line = [word]
-        else:
-            current_line.append(word)
-            
-    # Append the last remaining line
-    if current_line:
-        captions.append(current_line)
 
-    # 3. Format into SRT
-    srt_output = ""
-    for index, group in enumerate(captions):
-        start_time = ms_to_srt_time(group[0]['start'])
-        end_time = ms_to_srt_time(group[-1]['end'])
-        
-        # Join words with spaces
-        text_content = " ".join([w['text'].strip() for w in group])
-        
-        srt_output += f"{index + 1}\n"
-        srt_output += f"{start_time} --> {end_time}\n"
-        srt_output += f"{text_content}\n\n"
-        
-    return srt_output
+def clean_word(text):
+    text = text.strip().replace("—", "")
+    text = text.strip("'\"“”‘’")
+    return text.rstrip(TRAILING_PUNCTUATION)
 
-def str_to_bool(value):
-    if isinstance(value, bool):
-        return value
-    if value.lower() in {'false', 'f', '0', 'no', 'n'}:
-        return False
-    return True
 
-def format_timestamp(seconds: float, always_include_hours: bool = False, decimal_marker: str = ',') -> str:
-    """Standard SRT timestamp format: HH:MM:SS,mmm"""
-    assert seconds >= 0, "non-negative timestamp expected"
-    milliseconds = round(seconds * 1000.0)
+def display_text(words):
+    return " ".join(clean_word(word["text"]) for word in words).strip()
 
-    hours = milliseconds // 3600000
-    milliseconds -= hours * 3600000
 
-    minutes = milliseconds // 60000
-    milliseconds -= minutes * 60000
-
-    seconds = milliseconds // 1000
-    milliseconds -= seconds * 1000
-
-    hours_marker = f"{hours:02d}:" if always_include_hours or hours > 0 else "00:"
-    return f"{hours_marker}{minutes:02d}:{seconds:02d}{decimal_marker}{milliseconds:03d}"
-
-def write_srt(transcript, file):
-    """Write lines to file in SRT format"""
-    for i, segment in enumerate(transcript, start=1):
-        print(f"{i}\n"
-              f"{format_timestamp(segment.start)} --> {format_timestamp(segment.end)}\n"
-              f"{segment.text.strip().replace('-->', '->')}\n", file=file, flush=True)
-
-def translate_with_ollama(text, model="llama3"):
-    """Translate text using local Ollama API"""
-    url = "http://localhost:11434/api/generate"
-    
-    prompt = f"""You are a professional subtitle translator. Translate the following English text to Traditional Chinese (Taiwan style).
-    Output ONLY the translated text, no explanations, no notes.
-    
-    Text: "{text}"
-    Translation:"""
-
-    payload = {
-        "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "options": {
-            "temperature": 0.3
-        }
-    }
-
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        result = response.json()
-        return result.get("response", "").strip().strip('"').strip("'")
-    except requests.exceptions.RequestException as e:
-        print(f"Ollama Translation Error: {e}")
-        return text # Return original text on error
-
-def translate_with_google(text, target="zh-TW"):
-    """Translate text using Google Translate via deep-translator"""
-    try:
-        # Re-instantiating might be slow if loop, but acceptable for this script scale.
-        # Ideally we'd reuse the translator instance.
-        # But deep_translator is stateless mostly or lightweight.
-        # Let's check `translate_batch` if needed later.
-        return GoogleTranslator(source='auto', target=target).translate(text)
-    except Exception as e:
-        print(f"Google Translation Error: {e}")
+def output_text(words):
+    text = display_text(words)
+    if not text:
         return text
+    return text[0].upper() + text[1:]
 
 
-def translate_srt_zh(
-    original_output, 
-    zh_output, 
-    ollama_model: str = "hf.co/chienweichang/Llama-3-Taiwan-8B-Instruct-GGUF",
-    translation_engine: str = "google"
-):
-    print(f"Translation enabled ({translation_engine})...")
-    
-    if translation_engine == "ollama":
-        try:
-            requests.get("http://localhost:11434")
-            print("Ollama connection established.")
-        except requests.exceptions.ConnectionError:
-            print("Error: Could not connect to Ollama. Make sure 'ollama serve' is running.")
-            return
-
-    with open(original_output, "r", encoding="utf-8") as f_orig:
-        srt_parsed = srt.parse(f_orig.read() )
-
-    with open(zh_output, "w", encoding="utf-8") as zh_file:
-        for line in srt_parsed:
-                if translation_engine == "google":
-                    translated = translate_with_google(line.content, target="zh-TW")
-                else:
-                    translated = translate_with_ollama(line.content, model=ollama_model)
-                
-                line.content = translated
-                zh_file.write(line.to_srt())
-                zh_file.flush()
-
-    print(f"Translation completed")
-    
+def has_terminal_punctuation(text):
+    return text.strip().rstrip("'\"“”‘’").endswith(PUNCTUATION_BREAKS)
 
 
+def normalized_word(word, max_word_duration_ms):
+    start = int(word.get("start") or 0)
+    end = int(word.get("end") or start)
+    text = word.get("text") or ""
 
-def split_srt_by_hour(input_srt):
-    """
-    Split a large SRT file into multiple files based on hour.
-    transcript.srt -> transcript-0.srt (0h-1h), transcript-1.srt (1h-2h), etc.
-    """
-    if not os.path.exists(input_srt):
-        return
+    if end < start:
+        end = start
 
-    print(f"Splitting SRT by hour: {input_srt}")
-    
-    base_name = os.path.dirname(input_srt) # e.g. /path/to/transcript
-    # We want transcript-0.srt
-    
-    current_hour = -1
-    current_file = None
-    
-    count = 1
-    
-    with open(input_srt, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-        
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not line: # Skip empty lines/separators
-            i += 1
+    duration = end - start
+    if duration > max_word_duration_ms:
+        estimated = max(240, min(max_word_duration_ms, 180 + len(clean_word(text)) * 90))
+        end = start + estimated
+
+    if end == start:
+        end = start + 80
+
+    new_word = dict(word)
+    new_word["start"] = start
+    new_word["end"] = end
+    return new_word
+
+
+def normalize_words(words, max_word_duration_ms):
+    normalized = []
+    for word in words:
+        text = clean_word(word.get("text") or "")
+        if not text:
             continue
-            
-        # SRT block structure:
-        # Index
-        # Timestamp --> Timestamp
-        # Text
-        # (Blank line)
-        
-        # Check if line looks like index
-        if line.isdigit():
-            index = line
-            if i + 1 >= len(lines): break
-            timestamp_line = lines[i+1].strip()
-            
-            if '-->' in timestamp_line:
-                start_str, end_str = timestamp_line.split(' --> ')
-                start_str = start_str.strip()
-                
-                # Determine hour
-                # simple parsing HH:MM:SS,mmm
-                try:
-                    h_str = start_str.split(':')[0]
-                    hour = int(h_str)
-                except:
-                    hour = 0
-                
-                if hour != current_hour:
-                    if current_file:
-                        current_file.close()
-                    
-                    current_hour = hour
-                    
-                    # Output to {base_name}/transcript-chunked/
-                    output_dir = os.path.join(base_name, "transcript-chunked")
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    
-                    # Filename: transcript-0.srt inside the folder
-                    # Use os.path.basename(base_name) to get "transcript"
-                    filename_only = f"{os.path.basename(base_name)}-{current_hour}.srt"
-                    output_filename = os.path.join(output_dir, filename_only)
-                    
-                    print(f"Creating hourly split: {output_filename}")
-                    current_file = open(output_filename, 'w', encoding='utf-8')
-                    # Reset counter for new file? Usually valid SRTs start at 1.
-                    # But if we split, maybe keeping global index is ok, or reset?
-                    # User request: "generate multiple... from transcript.srt".
-                    # Usually better to keep sequential index OR reset if it's a standalone view.
-                    # I will KEEP original index for now as it maps to original video time.
-                    # Wait, usually split SRTs are used for corresponding split video chunks.
-                    # But here we are splitting ONLY the SRT. The video is likely still full length?
-                    # "transcript-{i}.srt... for each i stands for number i's hour content".
-                    # Timestamp should probably be preserved (absolute time), so index implies order.
-                
-                # Write the block to current file
-                if current_file:
-                    # Find end of block (empty line)
-                    current_file.write(f"{line}\n") # Index
-                    current_file.write(f"{timestamp_line}\n") # Time
-                    
-                    # Read text lines until empty line
-                    j = i + 2
-                    while j < len(lines):
-                        txt_line = lines[j].rstrip() # Keep structure but parse empty line check
-                        if not txt_line:
-                            current_file.write("\n")
-                            break
-                        current_file.write(f"{txt_line}\n")
-                        j += 1
-                    
-                    # Advance i
-                    i = j + 1
-                    continue
-        
-        i += 1
+        normalized.append(normalized_word(word, max_word_duration_ms))
+    return normalized
 
-    if current_file:
-        current_file.close()
+
+def should_break(current, next_word, max_chars, max_words, max_duration_ms, gap_ms):
+    previous = current[-1]
+    current_text = display_text(current)
+    next_text = clean_word(next_word["text"])
+    projected = f"{current_text} {next_text}".strip()
+    projected_duration = next_word["end"] - current[0]["start"]
+    pause = next_word["start"] - previous["end"]
+    previous_text = previous.get("text", "").strip()
+
+    if pause > gap_ms:
+        return True
+    if len(projected) > max_chars:
+        return True
+    if len(current) >= max_words:
+        return True
+    if projected_duration > max_duration_ms:
+        return True
+    if has_terminal_punctuation(previous_text):
+        return True
+    if previous_text.endswith(",") and len(current) <= 2:
+        return True
+
+    return False
+
+
+def build_segments(
+    words,
+    max_chars=40,
+    max_words=7,
+    max_duration_ms=2800,
+    gap_ms=500,
+    max_word_duration_ms=1200,
+):
+    words = normalize_words(words, max_word_duration_ms)
+    segments = []
+    current = []
+
+    def flush():
+        nonlocal current
+        text = output_text(current)
+        if text:
+            segments.append((current[0]["start"], current[-1]["end"], text))
+        current = []
+
+    for word in words:
+        if current and should_break(
+            current,
+            word,
+            max_chars,
+            max_words,
+            max_duration_ms,
+            gap_ms,
+        ):
+            flush()
+        current.append(word)
+
+    if current:
+        flush()
+
+    previous_end = 0
+    adjusted_segments = []
+    for start, end, text in segments:
+        start = max(start, previous_end)
+        if end <= start:
+            end = start + 80
+        adjusted_segments.append((start, end, text))
+        previous_end = end
+
+    return adjusted_segments
+
+
+def write_srt(segments, output_path):
+    with open(output_path, "w", encoding="utf-8") as output_file:
+        for index, (start, end, text) in enumerate(segments, start=1):
+            output_file.write(f"{index}\n")
+            output_file.write(f"{format_timestamp(start)} --> {format_timestamp(end)}\n")
+            output_file.write(f"{text}\n\n")
+
+
+def translate_srt(input_srt, output_srt, target_lang="zh-TW"):
+    from googlecloud import GoogleTranslator
+
+    translator = GoogleTranslator(source="en", target=target_lang)
+    if translator.client is None:
+        raise RuntimeError("Google Translate client is not initialized")
+
+    translated_path = translator.translate_file(input_srt, output_file=str(output_srt))
+    if translated_path is None or not Path(translated_path).exists():
+        raise RuntimeError(f"Translation output was not created: {output_srt}")
+
+
+def to_srt(
+    input_json,
+    output_dir=None,
+    max_chars=40,
+    max_words=7,
+    max_duration_ms=2800,
+    gap_ms=500,
+    max_word_duration_ms=1200,
+    translate=True,
+    target_lang="zh-TW",
+):
+    input_json = Path(input_json)
+    output_dir = Path(output_dir) if output_dir else input_json.parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_srt = output_dir / "result.srt"
+    translated_srt = output_dir / "result-zh.srt"
+
+    with open(input_json, "r", encoding="utf-8") as json_file:
+        data = json.load(json_file)
+
+    segments = build_segments(
+        data.get("words") or [],
+        max_chars=max_chars,
+        max_words=max_words,
+        max_duration_ms=max_duration_ms,
+        gap_ms=gap_ms,
+        max_word_duration_ms=max_word_duration_ms,
+    )
+
+    write_srt(segments, output_srt)
+    print(f"Wrote {len(segments):3d} subtitles: {output_srt}")
+
+    if translate:
+        translate_srt(output_srt, translated_srt, target_lang=target_lang)
+        print(f"Wrote translated subtitles: {translated_srt}")
+    else:
+        translated_srt = None
+
+    return output_srt, translated_srt, len(segments)
+
 
 def transcribe_video(
     input_file: str,
     output_file: str,
-    model_size: str = "medium",
-    device: str = "auto",
-    compute_type: str = "int8",
-    engine: str = "assemblyai",
     speaker_labels: bool = False,
-    google_translate: bool = False,
+    google_translate: bool = True,
+    target_lang: str = "zh-TW",
 ):
     """
-    Core function to transcribe and optionally translate a video file.
+    Transcribe a video or audio file with AssemblyAI and write assemblyAI.json.
     
     Args:
         input_file: Path to the input video/audio file.
-        model_size: Whisper model size (default: "medium").
-        device: "cuda", "cpu", or "auto" (default: "auto").
-        compute_type: "int8" or "float16" (default: "int8").
-        ollama_model: Ollama model to use (default: Llama-3-Taiwan...).
-        engine: "assemblyai" or "faster_whisper" (default: "assemblyai").
+        output_file: Path used to determine the output directory.
+        speaker_labels: Enable speaker diarization in AssemblyAI.
+        google_translate: Write translated result-zh.srt when True.
+        target_lang: Translation target language.
     """
-    segments = []
+    api_key = os.environ.get("ASSEMBLYAI_API_KEY")
+    if not api_key:
+        print("Error: ASSEMBLYAI_API_KEY environment variable not set.")
+        sys.exit(1)
+        
+    aai.settings.api_key = api_key
+    transcriber = aai.Transcriber()
+    config = dict(
+        speech_models=["universal-3-pro", "universal-2"],
+        format_text=True,
+        punctuate=False,
+        language_detection=True,
+        disfluencies=True,
+    )
+
+    if speaker_labels:
+        config["speaker_labels"] = True
+
+    transcribe_config = aai.TranscriptionConfig(**config)
     
-    if engine == "assemblyai":
-        api_key = os.environ.get("ASSEMBLYAI_API_KEY")
-        if not api_key:
-            print("Error: ASSEMBLYAI_API_KEY environment variable not set.")
-            sys.exit(1)
-            
-        aai.settings.api_key = api_key
-        transcriber = aai.Transcriber()
-        config = dict(
-            format_text=True,
-            punctuate=False,
-            language_detection=True,
-            disfluencies=True,
-        )
+    print("Starting Analysis & Transcription (AssemblyAI)...")
+    transcript = transcriber.transcribe(input_file, config=transcribe_config)
+    
+    if transcript.status == aai.TranscriptStatus.error:
+        print(f"AssemblyAI Error: {transcript.error}")
+        sys.exit(1)
 
-        if speaker_labels:
-            config["speaker_labels"] = True
-            config["speech_understanding"]={
-                "request": {
-                    "translation": {
-                        "target_languages": ["zh"],
-                        "formal": False,
-                        "match_original_utterance": True
-                    }
-                }
-            }
+    output_dir = os.path.dirname(os.path.abspath(output_file or input_file))
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    json_output = os.path.join(output_dir, "assemblyAI.json")
 
-        transcribe_config = aai.TranscriptionConfig(**config)
-        
-        print(f"Starting Analysis & Transcription (AssemblyAI)...")
-        transcript = transcriber.transcribe(input_file, config=transcribe_config)
-        
-        if transcript.status == aai.TranscriptStatus.error:
-            print(f"AssemblyAI Error: {transcript.error}")
-            sys.exit(1)
-        
-        # 1. Export Full SRT (Semantic Captions)
-        print("Generating semantic captions...")
-        words_data = [{'text': w.text, 'start': w.start, 'end': w.end} for w in transcript.words]
-        srt_result = generate_semantic_captions(words_data)
+    print(f"Writing AssemblyAI JSON to: {json_output}")
+    with open(json_output, "w", encoding="utf-8") as json_file:
+        json.dump(transcript.json_response, json_file, ensure_ascii=False, indent=2)
 
-        print(f"Writing original transcript to: {output_file}")
-        with open(output_file, "w", encoding="utf-8") as f_orig:
-          f_orig.write(srt_result)
-
-        if google_translate:
-          GoogleTranslator().translate_file(output_file)
-        
-        # 2. Export per-speaker SRTs
-        # Group utterances by speaker
-        if not speaker_labels:
-          return
-
-        by_speaker = defaultdict(list)
-        
-        def ms_to_srt_time(ms: int) -> str:
-            h = ms // 3600000
-            m = (ms % 3600000) // 60000
-            s = (ms % 60000) // 1000
-            ms_rem = ms % 1000
-            return f"{h:02}:{m:02}:{s:02},{ms_rem:03}"
-
-        for i, u in enumerate(transcript.utterances, start=1):
-            by_speaker[u.speaker].append(u)
-
-        # Write one SRT file per speaker
-        base_dir = os.path.dirname(output_file)
-        transcript_dir = os.path.join(base_dir, "transcript")
-        if not os.path.exists(transcript_dir):
-            os.makedirs(transcript_dir)
-            
-        print(f"Processing {len(by_speaker)} speakers...")
-            
-        for speaker, uts in by_speaker.items():
-            lines = []
-            lines_zh = []
-            for i, u in enumerate(uts, start=1):
-                # Original
-                lines.append(str(i))
-                lines.append(f"{ms_to_srt_time(u.start)} --> {ms_to_srt_time(u.end)}")
-                lines.append(u.text)
-                lines.append("") # Blank line
-                
-                # Translated
-                zh_text = getattr(u, "translated_texts", {}).get("zh")
-                if zh_text:
-                    lines_zh.append(str(i))
-                    lines_zh.append(f"{ms_to_srt_time(u.start)} --> {ms_to_srt_time(u.end)}")
-                    lines_zh.append(zh_text)
-                    lines_zh.append("") 
-            
-            # Write Original
-            fname = os.path.join(transcript_dir, f"speaker_{speaker}.srt")
-            with open(fname, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
-            print("Wrote", fname)
-            
-            # Write Translated (Convert to Traditional Chinese)
-            if lines_zh:
-                converter = opencc.OpenCC('s2t.json')
-                fname_zh = os.path.join(transcript_dir, f"speaker_{speaker}_zh.srt")
-                with open(fname_zh, "w", encoding="utf-8") as f:
-                    f.write(converter.convert("\n".join(lines_zh)))
-                print("Wrote", fname_zh)
-
-        
-    else:
-        # Default: faster_whisper
-        # 1. Setup Device
-        if device == "auto":
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        print(f"Loading Whisper Model: {model_size} on {device} ({compute_type})...")
-        
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
-
-        print("Starting Analysis & Transcription (faster-whisper)...")
-        
-        segments_gen, info = model.transcribe(
-            input_file, 
-            vad_filter=True,
-        )
-
-        # info is returned immediately by faster-whisper
-        info_language = info.language
-        print(f"Detected language '{info_language}' with probability {info.language_probability:.2f}")
-        segments = segments_gen
-
-        print(f"Writing original transcript to: {output_file}")
-        
-        # Open files
-        with open(output_file, "w", encoding="utf-8") as f_orig:
-            count = 1
-            for segment in segments:
-                start_time = format_timestamp(segment.start)
-                end_time = format_timestamp(segment.end)
-                text = segment.text.strip()
-                
-                # Write Original
-                print(f"[{start_time} --> {end_time}] {text}")
-                f_orig.write(f"{count}\n")
-                f_orig.write(f"{start_time} --> {end_time}\n")
-                f_orig.write(f"{text}\n\n")
-                f_orig.flush()
-
-                count += 1
+    to_srt(json_output, translate=google_translate, target_lang=target_lang)
 
     print("Done!")
+    return json_output
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Local Whisper Transcription Tool")
+    parser = argparse.ArgumentParser(description="Transcribe audio/video and write AssemblyAI JSON")
     parser.add_argument("input_file", help="Path to input video/audio file")
-    parser.add_argument("--zh_output", default=None, help="Output path for translated Chinese subtitle (optional)")
-    parser.add_argument("--split-by-hour", action="store_true", help="Splitting transcript by hour")
-    parser.add_argument("--engine", default="assemblyai", choices=["assemblyai", "faster_whisper"], help="Transcription engine to use")
-    parser.add_argument("--translation_engine", default="google", choices=["google", "ollama"], help="Translation engine to use (default: google)")
     parser.add_argument("--speaker_labels", action="store_true", help="Enable speaker labels")
+    parser.add_argument("--no-translate", action="store_true", help="Only write result.srt; skip result-zh.srt")
+    parser.add_argument("--target-lang", default="zh-TW", help="Translation target language for result-zh.srt")
 
     args = parser.parse_args()
     input_file = os.path.abspath(args.input_file)
@@ -497,35 +277,19 @@ def main():
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"Input file not found: {input_file}")
         
-    # Resolve output file paths
-    # Original transcript always goes to transcript.srt in the same directory as input
+    # Use transcript.srt as a legacy path hint; AssemblyAI JSON is written beside it.
     original_output = os.path.join(os.path.dirname(input_file), "transcript.srt")
     try:
         transcribe_video(
             input_file=input_file,
             output_file=original_output,
-            engine=args.engine,
             speaker_labels=args.speaker_labels,
-            google_translate=True,
+            google_translate=not args.no_translate,
+            target_lang=args.target_lang,
         )
     except Exception as e:
         print(f"Error during transcription: {e}")
         sys.exit(1)
-
-    if args.split_by_hour:
-        split_srt_by_hour(original_output)
-
-    # Resolve zh_output if provided
-    if args.zh_output:
-        if not os.path.isabs(args.zh_output) and os.path.dirname(args.zh_output) == "":
-            zh_output = os.path.join(os.path.dirname(input_file), args.zh_output)
-
-        translate_srt_zh(
-            original_output, 
-            zh_output=zh_output, 
-            ollama_model=args.ollama_model,
-            translation_engine=args.translation_engine
-        )
 
 
 if __name__ == "__main__":
