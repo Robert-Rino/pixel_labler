@@ -132,6 +132,26 @@ uv run python -c 'from downloader import YTDownloader; YTDownloader(root_dir="."
 uv run python -c 'from downloader import get_downloader; url = "YOUTUBE_URL"; get_downloader(url, root_dir=".").download(url)'
 ```
 
+---
+
+## 5. YouTube Uploader (`yt_upload.py`)
+
+Upload a video to YouTube with a title, optional thumbnail, and optional scheduled publish time.
+
+### Usage
+```bash
+uv run yt_upload.py /path/to/video.mp4 --title "My Video" --thumbnail /path/to/thumb.jpg --publish_time "2026-06-20T15:00:00Z"
+```
+
+### Notes
+- Uses the YouTube Data API OAuth flow.
+- Store your OAuth client secrets in `client_secret.json` or pass `--client_secrets`.
+- OAuth tokens are cached in `youtube_token.json` by default.
+- `--publish_time` expects ISO-8601 and schedules the upload as private.
+
+---
+
+## 6. Transcription Tool (`transcript.py`)
 
 Generate SRT subtitles using **AssemblyAI** (default) or **faster-whisper**, with translation support using **Google Translate** (default) or **Ollama**.
 
@@ -157,7 +177,7 @@ uv run transcript.py /path/to/video.mp4 --zh_output "zh.srt"
 
 ---
 
-## 6. Generic Translator (`translate.py`)
+## 7. Generic Translator (`translate.py`)
 
 Simple CLI tool to translate text/files using Google Translate.
 
@@ -172,7 +192,7 @@ uv run translate.py path/to/file.txt
 
 ---
 
-## 7. Batch Clipper (`crop.py`)
+## 8. Batch Clipper (`crop.py`)
 
 Process a long video into multiple clips based on a list.
 
