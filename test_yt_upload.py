@@ -182,6 +182,37 @@ class TestYouTubeUpload(unittest.TestCase):
             datetime(2026, 6, 20, 15, 0, tzinfo=timezone.utc),
         )
 
+    def test_resolve_publish_time_defaults_to_24_hours_later(self):
+        now = datetime(2026, 6, 20, 10, 30, tzinfo=timezone.utc)
+
+        publish_time = yt_upload.resolve_publish_time(now=now)
+
+        self.assertEqual(
+            publish_time,
+            datetime(2026, 6, 21, 10, 30, tzinfo=timezone.utc),
+        )
+
+    def test_resolve_publish_time_can_disable_scheduling(self):
+        now = datetime(2026, 6, 20, 10, 30, tzinfo=timezone.utc)
+
+        publish_time = yt_upload.resolve_publish_time(
+            no_schedule=True,
+            now=now,
+        )
+
+        self.assertIsNone(publish_time)
+
+    def test_resolve_publish_time_prefers_explicit_value(self):
+        publish_time = yt_upload.resolve_publish_time(
+            "2026-06-25T15:00:00Z",
+            now=datetime(2026, 6, 20, 10, 30, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(
+            publish_time,
+            datetime(2026, 6, 25, 15, 0, tzinfo=timezone.utc),
+        )
+
     def test_build_video_body_schedules_private_publish(self):
         publish_time = datetime(2026, 6, 20, 15, 0, tzinfo=timezone.utc)
 
@@ -226,6 +257,16 @@ class TestYouTubeUpload(unittest.TestCase):
         )
         service.playlistItems.return_value.insert.return_value.execute.assert_called_once()
 
+    def test_write_video_id_writes_trailing_newline(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "youtube_video_id.txt")
+
+            yt_upload.write_video_id("video123", output_path)
+
+            with open(output_path, "r", encoding="utf-8") as video_id_file:
+                self.assertEqual(video_id_file.read(), "video123\n")
+
+    @patch("yt_upload.write_video_id")
     @patch("yt_upload.MediaFileUpload")
     @patch("yt_upload.build")
     @patch("yt_upload.load_credentials")
@@ -236,6 +277,7 @@ class TestYouTubeUpload(unittest.TestCase):
         mock_load_credentials,
         mock_build,
         mock_media_file_upload,
+        mock_write_video_id,
     ):
         mock_load_credentials.return_value = MagicMock()
 
@@ -268,10 +310,18 @@ class TestYouTubeUpload(unittest.TestCase):
             playlist_id="playlist456",
             client_secrets_file="client_secret.json",
             token_file="token.json",
+            video_id_file="youtube_video_id.txt",
         )
 
         self.assertEqual(result, "video123")
-        self.assertEqual(videos.insert.call_args.kwargs["body"]["snippet"]["description"], "Desc\n#news")
+        self.assertEqual(
+            videos.insert.call_args.kwargs["body"]["snippet"]["description"],
+            "Desc\n#news",
+        )
+        mock_write_video_id.assert_called_once_with(
+            "video123",
+            "youtube_video_id.txt",
+        )
         mock_media_file_upload.assert_any_call(
             "video.mp4",
             chunksize=1024 * 1024 * 8,
@@ -283,6 +333,43 @@ class TestYouTubeUpload(unittest.TestCase):
         thumbnails.set.return_value.execute.assert_called_once()
         playlist_items.insert.assert_called_once()
         playlist_items.insert.return_value.execute.assert_called_once()
+
+    @patch("yt_upload.write_video_id")
+    @patch("yt_upload.MediaFileUpload")
+    @patch("yt_upload.build")
+    @patch("yt_upload.load_credentials")
+    @patch("os.path.isfile", return_value=True)
+    def test_upload_video_saves_id_before_thumbnail_failure(
+        self,
+        mock_isfile,
+        mock_load_credentials,
+        mock_build,
+        mock_media_file_upload,
+        mock_write_video_id,
+    ):
+        request = MagicMock()
+        request.next_chunk.return_value = (None, {"id": "video123"})
+
+        service = MagicMock()
+        service.videos.return_value.insert.return_value = request
+        service.thumbnails.return_value.set.return_value.execute.side_effect = (
+            RuntimeError("thumbnail failed")
+        )
+        mock_build.return_value = service
+        mock_load_credentials.return_value = MagicMock()
+
+        with self.assertRaisesRegex(RuntimeError, "thumbnail failed"):
+            yt_upload.upload_video(
+                "video.mp4",
+                title="My Title",
+                thumbnail_file="thumb.jpg",
+                video_id_file="youtube_video_id.txt",
+            )
+
+        mock_write_video_id.assert_called_once_with(
+            "video123",
+            "youtube_video_id.txt",
+        )
 
     @patch("yt_upload.InstalledAppFlow")
     @patch("yt_upload.Credentials")

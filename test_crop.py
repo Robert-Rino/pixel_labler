@@ -82,10 +82,10 @@ class TestCropRecords(unittest.TestCase):
 
             first_call = mock_crop.call_args_list[0].args
             second_call = mock_crop.call_args_list[1].args
-            self.assertEqual(first_call[1], "04:50:52.000")
-            self.assertEqual(first_call[2], "04:51:33.000")
-            self.assertEqual(second_call[1], "04:52:18.000")
-            self.assertEqual(second_call[2], "04:54:18.000")
+            self.assertEqual(first_call[1], "04:50:57")
+            self.assertEqual(first_call[2], "04:51:28")
+            self.assertEqual(second_call[1], "04:52:23")
+            self.assertEqual(second_call[2], "04:54:13")
 
             first_encode_args = mock_encode_subtitle.call_args_list[0].args
             self.assertEqual(first_encode_args[0], os.path.join(tmpdir, "抓到你了小子", "stacked.mp4"))
@@ -149,8 +149,8 @@ class TestCropRecords(unittest.TestCase):
             mock_encode_subtitle.assert_called_once()
             mock_generate_thumbnail.assert_called_once()
             args = mock_crop.call_args.args
-            self.assertEqual(args[1], "00:00:55.000")
-            self.assertEqual(args[2], "00:01:15.000")
+            self.assertEqual(args[1], "00:01:00")
+            self.assertEqual(args[2], "00:01:10")
 
             metadata_path = os.path.join(tmpdir, "Custom_000100_000110", "metadata.md")
             with open(metadata_path, "r", encoding="utf-8") as f:
