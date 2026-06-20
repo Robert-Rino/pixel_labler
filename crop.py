@@ -218,20 +218,6 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
 
         # 4. 執行 ffmpeg 指令
         if os.path.exists(input_video_path):
-            # Calculate padded time
-            start_seconds = parse_time_to_seconds(start_ts)
-            end_seconds = parse_time_to_seconds(end_ts)
-            
-            # Start - 5s, End + 5s
-            # Clamp start to 0
-            adj_start = max(0, start_seconds - 5)
-            # End just adds 5s
-            adj_end = end_seconds + 5
-            
-            # Convert back to string for ffmpeg
-            adj_start_str = seconds_to_time_str(adj_start)
-            adj_end_str = seconds_to_time_str(adj_end)
-
             # Define output path for audio (needed for transcription)
             path_audio = os.path.join(output_folder, "audio.wav")
 
@@ -239,8 +225,8 @@ def process(root_dir, crop_cam, crop_screen, start_arg=None, end_arg=None):
             
             success = ffmpeg.crop(
                 input_video_path, 
-                adj_start_str, 
-                adj_end_str, 
+                start_ts,
+                end_ts,
                 output_folder=output_folder, 
                 crop_cam=crop_cam, 
                 crop_screen=crop_screen
