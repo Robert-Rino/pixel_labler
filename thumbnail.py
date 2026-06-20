@@ -12,7 +12,7 @@ DEFAULT_SIZE = (1280, 720)
 RED = (255, 0, 0)
 WHITE = (255, 255, 255)
 DEFAULT_MARGIN = 32
-DEFAULT_PADDING = 24
+DEFAULT_PADDING = 16
 DEFAULT_FONT_SCALE = 0.07
 DEFAULT_RADIUS = 8
 DEFAULT_SECOND_FONT_SCALE = 0.06
@@ -20,6 +20,8 @@ DEFAULT_EMOJI_SCALE = 0.1
 DEFAULT_LAYER_GAP = 4
 MIDDLE_Y_OFFSET = -60
 SECOND_TITLE_STROKE = (214, 93, 255)
+TITLE_BOLD_DIVISOR = 32
+TITLE_BOLD_OPACITY = 186
 
 
 def parse_size(value):
@@ -334,24 +336,42 @@ def _draw_bold_multiline_text(
     stroke_width=0,
     stroke_fill=None,
     bold_width=1,
+    bold_opacity=255,
 ):
     x, y = position
-    offsets = [(0, 0)]
+    offsets = []
     for offset in range(1, bold_width + 1):
         offsets.extend([(offset, 0), (-offset, 0), (0, offset), (0, -offset)])
 
     for offset_x, offset_y in offsets:
+        offset_fill = (*fill, bold_opacity) if len(fill) == 3 else fill
         draw.multiline_text(
             (x + offset_x, y + offset_y),
             text,
             font=font,
-            fill=fill,
+            fill=offset_fill,
             anchor=None,
             align="center",
             spacing=max(6, font.size // 8),
             stroke_width=stroke_width,
             stroke_fill=stroke_fill,
         )
+
+    draw.multiline_text(
+        (x, y),
+        text,
+        font=font,
+        fill=fill,
+        anchor=None,
+        align="center",
+        spacing=max(6, font.size // 8),
+        stroke_width=stroke_width,
+        stroke_fill=stroke_fill,
+    )
+
+
+def _title_bold_width(font_size):
+    return max(1, font_size // TITLE_BOLD_DIVISOR)
 
 
 def create_thumbnail(
@@ -444,7 +464,7 @@ def create_thumbnail(
 
     text_x = box[0] + (box[2] - box[0] - text_width) // 2
     text_y = box[1] + (box[3] - box[1] - text_height) // 2
-    title_bold_width = max(1, font.size // 30)
+    title_bold_width = _title_bold_width(font.size)
     _draw_bold_multiline_text(
         draw,
         (text_x, text_y),
@@ -453,6 +473,7 @@ def create_thumbnail(
         WHITE,
         stroke_width=0,
         bold_width=title_bold_width,
+        bold_opacity=TITLE_BOLD_OPACITY,
     )
     current_y = box[3] + DEFAULT_LAYER_GAP
 
